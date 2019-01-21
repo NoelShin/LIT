@@ -1,8 +1,6 @@
 import os
-from functools import partial
 import torch
 import torch.nn as nn
-from torch.autograd import grad
 import numpy as np
 from PIL import Image
 
@@ -53,7 +51,8 @@ def configure(opt):
         raise NotImplementedError("Please check dataset_name. It should be in ['Cityscapes', 'Custom'].")
 
     dataset_name = opt.dataset_name
-    model_name = model_namer(height=opt.image_height)
+    model_name = model_namer(opt.trans_unit, opt.image_height, opt.GAN_type, opt.norm_type, A_norm=opt.C_norm,
+                             condition=opt.C_condition)
     make_dir(dataset_name, model_name, type='checkpoints')
 
     if opt.is_train:
@@ -65,11 +64,12 @@ def configure(opt):
     opt.model_dir = os.path.join('./checkpoints', dataset_name, 'Model', model_name)
     log_path = os.path.join('./checkpoints/', dataset_name, 'Model', model_name, 'opt.txt')
 
-    if os.path.isfile(log_path):
+    if os.path.isfile(log_path) and not opt.debug:
         permission = input(
             "{} log already exists. Do you really want to overwrite this log? Y/N. : ".format(model_name + '/opt'))
         if permission == 'Y':
             pass
+
         else:
             raise NotImplementedError("Please check {}".format(log_path))
 
@@ -77,7 +77,7 @@ def configure(opt):
         opt.display_freq = 1
         opt.n_epochs = 4
         opt.report_freq = 1
-        opt.save_freq = 1
+        opt.save_freq = 4
 
     args = vars(opt)
     with open(log_path, 'wt') as log:
@@ -91,24 +91,13 @@ def configure(opt):
         log.close()
 
 
-def model_namer(**elements):
-    name = ''
-    for k, v in sorted(elements.items()):
-        name += str(k) + '_' + str(v)
-    return name
-
-
 def make_dir(dataset_name=None, model_name=None, type='checkpoints'):
     assert dataset_name in ['Cityscapes']
     if type == 'checkpoints':
         assert model_name, "model_name keyword should be specified for type='checkpoints'"
-        if not os.path.isdir('./checkpoints'):
-            os.makedirs(os.path.join('./checkpoints', dataset_name, 'Image', 'Training', model_name))
-            os.makedirs(os.path.join('./checkpoints', dataset_name, 'Image', 'Test', model_name))
-            os.makedirs(os.path.join('./checkpoints', dataset_name, 'Model', model_name))
-
-        elif os.path.isdir('./checkpoints'):
-            print("checkpoints directory already exists.")
+        os.makedirs(os.path.join('./checkpoints', dataset_name, 'Image', 'Training', model_name), exist_ok=True)
+        os.makedirs(os.path.join('./checkpoints', dataset_name, 'Image', 'Test', model_name), exist_ok=True)
+        os.makedirs(os.path.join('./checkpoints', dataset_name, 'Model', model_name), exist_ok=True)
 
     else:
         """
@@ -117,15 +106,29 @@ def make_dir(dataset_name=None, model_name=None, type='checkpoints'):
         pass
 
 
+def model_namer(*elements, **k_elements):
+    name = ''
+
+    for k, v in sorted(k_elements.items()):
+        name += str(k) + '_' + str(v) + '_'
+
+    for v in elements:
+        name += str(v) + '_'
+
+    name = name.strip('_')
+
+    return name
+
+
 class Manager(object):
     def __init__(self, opt):
         self.opt = opt
 
     @staticmethod
     def report_loss(package):
-        print("LOD: {} [{:.{prec}}%] Current_step: {} D_loss: {:.{prec}}  G_loss: {:.{prec}}".format(package['lod'],
+        print("LOD: {} [{:.{prec}}%] Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}}".format(package['lod'],
                                                 package['current_step']/package['total_step']*100,
-                                                package['current_step'], package['D_loss'], package['G_loss'], prec=4))
+                                                package['current_step'], package['A_loss'], package['G_loss'], prec=4))
 
     @staticmethod
     def adjust_dynamic_range(data, drange_in, drange_out):
@@ -161,9 +164,9 @@ class Manager(object):
             self.save_image(package['generated_tensor'], path_fake)
 
         elif model:
-            path_D = os.path.join(self.opt.model_dir, str(package['current_step']) + '_' + 'D.pt')
+            path_A = os.path.join(self.opt.model_dir, str(package['current_step']) + '_' + 'A.pt')
             path_G = os.path.join(self.opt.model_dir, str(package['current_step']) + '_' + 'G.pt')
-            torch.save(package['D_state_dict'], path_D)
+            torch.save(package['A_state_dict'], path_A)
             torch.save(package['G_state_dict'], path_G)
 
     def __call__(self, package):
@@ -175,3 +178,16 @@ class Manager(object):
 
         if package['current_step'] % self.opt.save_freq == 0:
             self.save(package, model=True)
+
+
+class PixelNorm(nn.Module):
+    def __init__(self, eps=1e-8):
+        super(PixelNorm, self).__init__()
+        self.__name__ = 'PixelNorm'
+        self.eps = eps
+
+    def forward(self, x):
+        x = x * torch.rsqrt(torch.mean(x.pow(2), dim=1, keepdim=True) + self.eps)
+
+        return x
+    

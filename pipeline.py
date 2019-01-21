@@ -117,7 +117,7 @@ class CustomDataset(torch.utils.data.Dataset):
 
             data_dict = {'input_tensor': input_tensor, 'target_tensor': target_tensor}
 
-            if self.opt.D_condition:
+            if self.opt.C_condition:
                 D_label_tensor = self.get_transform(normalize=False, lod_size=True)(label_array) * 255.0
                 D_instance_tensor = self.get_transform(normalize=False, lod_size=True)(instance_array)
                 D_input_tensor = self.encode_input(D_label_tensor, D_instance_tensor)
@@ -135,7 +135,7 @@ class CustomDataset(torch.utils.data.Dataset):
 
             data_dict = {'input_tensor': input_tensor, 'target_tensor': target_tensor}
 
-            if self.opt.D_condition:
+            if self.opt.C_condition:
                 D_label_tensor = self.get_transform(normalize=True, lod_size=True)(label_array)
                 D_input_tensor = self.encode_input(D_label_tensor)
 
@@ -144,12 +144,8 @@ class CustomDataset(torch.utils.data.Dataset):
         else:
             raise NotImplementedError("Please check dataset_name. It should be in ['Cityscapes', 'Custom'].")
 
-        if self.opt.USE_CUDA:
-            device = torch.device('cuda', self.opt.gpu_ids)
-            for k, v in data_dict.items():
-                data_dict.update({k: v.to(device)})
-
         return data_dict
 
     def __len__(self):
         return len(self.label_path_list)
+    

@@ -20,7 +20,7 @@ class Loss(object):
     def calc_FM(self, fake_features, real_features):
         FM = 0
         for i in range(len(real_features)):
-            FM += self.FM_criterion(fake_features[i], real_features[i])
+            FM += self.FM_criterion(fake_features[i], real_features[i].detach())
 
         return FM
 
@@ -55,43 +55,56 @@ class LSGANLoss(Loss):
         self.criterion = nn.MSELoss()
         self.D_condition = opt.C_condition
 
-    def __call__(self, D, G, data_dict):
+    def __call__(self, D, G, lod, data_dict):
         loss_D = 0
         loss_G = 0
         loss_G_FM = 0
 
         input = data_dict['input_tensor']
-        fake = G(input)
+        fake = G(input, lod)
         target = data_dict['target_tensor']
 
-        real_features = D(torch.cat([input, target], dim=1))
-        fake_features = D(torch.cat([input, fake.detach()], dim=1))
+        if self.D_condition:
+            D_input = data_dict['D_input_tensor']
+            D_input_real = torch.cat([D_input, target], dim=1)
+            D_input_fake = torch.cat([D_input, fake.detach()], dim=1)
 
-        for i in range(self.opt.n_D):
-            real_grid = self.get_grid(real_features[i][-1], is_real=True)
-            fake_grid = self.get_grid(fake_features[i][-1], is_real=False)
+        else:
+            D_input_real = target
+            D_input_fake = fake.detach()
 
-            if self.opt.gpu_ids != -1:
-                real_grid = real_grid.cuda(self.opt.gpu_ids)
-                fake_grid = fake_grid.cuda(self.opt.gpu_ids)
+        real_features = D(D_input_real)
+        fake_features = D(D_input_fake)
 
-            loss_D += (self.criterion(real_features[i][-1], real_grid) +
-                       self.criterion(fake_features[i][-1], fake_grid)) * 0.5
+        real_grid = self.get_grid(real_features[-1], is_real=True)
+        fake_grid = self.get_grid(fake_features[-1], is_real=False)
 
-        fake_features = D(torch.cat([input, fake], dim=1))
+        if self.opt.gpu_ids != -1:
+            real_grid = real_grid.cuda(self.opt.gpu_ids)
+            fake_grid = fake_grid.cuda(self.opt.gpu_ids)
 
-        for i in range(self.opt.n_D):
-            for j in range(len(fake_features[0])):
-                loss_G_FM += self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
+        loss_D += (self.criterion(real_features[-1], real_grid) +
+                   self.criterion(fake_features[-1], fake_grid)) * 0.5
 
-            real_grid = self.get_grid(fake_features[i][-1], is_real=True)
-            if self.opt.gpu_ids != -1:
-                real_grid = real_grid.cuda(self.opt.gpu_ids)
-            loss_G += self.criterion(fake_features[i][-1], real_grid)
+        if self.D_condition:
+            D_input_fake = torch.cat([D_input, fake], dim=1)
 
-        loss_G += loss_G_FM * (1.0/self.opt.n_D) * self.opt.lambda_FM
+        else:
+            D_input_fake = fake
 
-        return loss_D, loss_G, target, fake
+        fake_features = D(D_input_fake)
+
+        for i in range(len(fake_features[0])):
+            loss_G_FM += self.FM_criterion(fake_features[i], real_features[i].detach())
+
+        real_grid = self.get_grid(fake_features[-1], is_real=True)
+        if self.opt.gpu_ids != -1:
+            real_grid = real_grid.cuda(self.opt.gpu_ids)
+        loss_G += self.criterion(fake_features[-1], real_grid)
+
+        loss_G += loss_G_FM * self.opt.FM_lambda
+
+        return loss_D, loss_G, fake
 
 
 class WGANGPLoss(Loss):
@@ -99,29 +112,22 @@ class WGANGPLoss(Loss):
         super(WGANGPLoss, self).__init__(opt)
         self.C_condition = opt.C_condition
         self.GP_lambda = opt.GP_lambda
-        self.gpu_id = opt.gpu_id
+        self.gpu_id = opt.gpu_ids
 
-    def calc_GP(self, output, target, C):
+    def calc_GP(self, C, output, target):
         alpha = torch.FloatTensor(np.random.random((target.shape[0], 1, 1, 1)))
         alpha = alpha.cuda(self.gpu_id) if self.gpu_id != -1 else alpha
 
         differences = target - output
         interp = (alpha * differences + output).requires_grad_(True)
 
-        if self.C_condition:
-            interp_score = C(torch.cat([input, interp], dim=1))[-1]
-
-        else:
-            interp_score = C(interp)[-1]
+        interp_score = C(interp)[-1]
 
         output_grid = torch.ones(interp_score.shape)
-        output_grid = output_grid.cuda(self.gpu_id) if self.gpu_id != -1 else alpha
+        output_grid = output_grid.cuda(self.gpu_id) if self.gpu_id != -1 else output_grid
 
         gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=output_grid,
                         create_graph=True, retain_graph=True, only_inputs=True)[0]
-
-        print(grad(outputs=interp_score, inputs=interp, grad_outputs=output_grid,
-                   create_graph=True, retain_graph=True, only_inputs=True))
 
         GP = (((gradient ** 2).sqrt() - 1.) ** 2).mean()
 
@@ -134,16 +140,31 @@ class WGANGPLoss(Loss):
         fake = G(data_dict['input_tensor'], lod)
         target = data_dict['target_tensor']
 
-        fake_features = C(fake.detach())
-        real_features = C(target)
+        if self.C_condition:
+            C_input = data_dict['D_input_tensor']
+            C_input_fake = torch.cat([C_input, fake.detach()], dim=1)
+            C_input_real = torch.cat([C_input, target], dim=1)
 
-        C_loss += fake_features[-1] - real_features[-1]
-        C_loss += self.GP_lambda * self.calc_GP(output=fake.detach(), target=target, C=C)
+        else:
+            C_input_fake = fake.detach()
+            C_input_real = target
 
-        fake_features = C(fake)
-        G_loss += -fake_features[-1]
+        fake_features = C(C_input_fake)
+        real_features = C(C_input_real)
+        C_loss += (fake_features[-1] - real_features[-1]).mean()
+
+        C_loss += self.GP_lambda * self.calc_GP(C, output=C_input_fake.detach(), target=C_input_real.detach())
+
+        if self.C_condition:
+            C_input_fake = torch.cat([C_input, fake], dim=1)
+
+        else:
+            C_input_fake = fake
+
+        fake_features = C(C_input_fake)
+        G_loss += -fake_features[-1].mean()
 
         if self.FM:
-            G_loss += self.FM_lambda * self.calc_FM(fake_features, real_features)
+            G_loss += self.FM_lambda * self.calc_FM(fake_features=fake_features, real_features=real_features)
 
         return C_loss, G_loss, fake

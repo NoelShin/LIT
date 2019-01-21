@@ -1,6 +1,7 @@
-from functools import partial, partialmethod
+from functools import partial
 import torch
 import torch.nn as nn
+from utils import PixelNorm
 
 
 class BaseNetwork(nn.Module):
@@ -8,9 +9,46 @@ class BaseNetwork(nn.Module):
         super(BaseNetwork, self).__init__()
 
     @staticmethod
+    def add_norm_act_layer(norm=None, act=None, n_ch=None, double_par=False):
+        layer = []
+        if not double_par:
+            if isinstance(norm, partial):
+                layer += [norm(n_ch)]
+
+            elif not norm:
+                pass
+
+            elif norm.__name__ == 'PixelNorm':
+                layer += [norm]
+
+            else:
+                raise NotImplementedError
+
+            if act:
+                layer += [act]
+
+        else:
+            if isinstance(norm, partial):
+                layer += [[norm(n_ch)]]
+
+            elif not norm:
+                pass
+
+            elif norm.__name__ == 'PixelNorm':
+                layer += [[norm]]
+
+            else:
+                raise NotImplementedError
+
+            if act:
+                layer[-1].append(act)
+
+        return layer
+
+    @staticmethod
     def get_act_layer(type, inplace=True, negative_slope=None):
         if type == 'leaky_relu':
-            assert not negative_slope and negative_slope != 0.0
+            assert negative_slope != 0.0
             layer = nn.LeakyReLU(negative_slope=negative_slope, inplace=inplace)
 
         elif type == 'relu':
@@ -28,6 +66,9 @@ class BaseNetwork(nn.Module):
 
         elif type == 'InstanceNorm2d':
             layer = partial(nn.InstanceNorm2d, affine=False)
+
+        elif type == 'PixelNorm':
+            layer = PixelNorm()
 
         else:
             layer = None
@@ -68,6 +109,23 @@ class BaseNetwork(nn.Module):
         else:
             pass
 
+    def set_attribute(self, list, name, sequential=True, progressive=False):
+        if progressive:
+            if sequential:
+                for i in range(len(list)):
+                    setattr(self, name + '_level_{}'.format(i), nn.Sequential(*list[i]))
+            else:
+                for i in range(len(list)):
+                    setattr(self, name + '_level_{}'.format(i), list[i])
+
+        else:
+            if sequential:
+                for i in range(len(list)):
+                    setattr(self, name + '_{}'.format(i), nn.Sequential(*list[i]))
+            else:
+                for i in range(len(list)):
+                    setattr(self, name + '_{}'.format(i), list[i])
+
     def to_CUDA(self, gpu_id):
         gpu_id = gpu_id[0] if isinstance(gpu_id, list) else gpu_id
         if gpu_id != -1:
@@ -82,36 +140,31 @@ class BaseNetwork(nn.Module):
 class PatchCritic(BaseNetwork):
     def __init__(self, opt):
         super(BaseNetwork, self).__init__()
-        act = self.get_act_layer(opt.C_act, negative_slope=opt.C_act_negative_slope)
+        # act = self.get_act_layer(opt.C_act, negative_slope=opt.C_act_negative_slope)
+        self.act = nn.LeakyReLU(0.2, inplace=False)  # to avoid inplace activation. inplace activation cause error WGAN_GP
         fan_mode = opt.fan_mode
         gpu_id = opt.gpu_ids
         init_type = opt.init_type
-        input_channel = opt.input_ch + opt.ouput_ch if opt.C_condition else opt.output_ch
+        input_channel = opt.input_ch + opt.output_ch if opt.C_condition else opt.output_ch
         n_df = opt.n_df
         negative_slope = opt.C_act_negative_slope
         norm = self.get_norm_layer(opt.norm_type) if opt.C_norm else None
 
-        blocks = []
-        if opt.C_norm:
-            blocks += [[nn.Conv2d(input_channel, n_df, kernel_size=4, padding=1, stride=2), act]]
-            blocks += [[nn.Conv2d(n_df, 2 * n_df, kernel_size=4, padding=1, stride=2), norm(2 * n_df), act]]
-            blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=2), norm(4 * n_df), act]]
-            blocks += [[nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1, stride=1), norm(8 * n_df), act]]
-            blocks += [[nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1, stride=1)]]
-
-        elif not opt.C_norm:
-            blocks += [[nn.Conv2d(input_channel, n_df, kernel_size=4, padding=1, stride=2), act]]
-            blocks += [[nn.Conv2d(n_df, 2 * n_df, kernel_size=4, padding=1, stride=2), act]]
-            blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=2), act]]
-            blocks += [[nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1, stride=1), act]]
-            blocks += [[nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1, stride=1)]]
+        blocks = [[nn.Conv2d(input_channel, n_df, kernel_size=4, padding=1, stride=2)]]
+        blocks += [[nn.Conv2d(n_df, 2 * n_df, kernel_size=4, padding=1, stride=2),
+                    *self.add_norm_act_layer(norm, n_ch=2 * n_df)]]
+        blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=2),
+                    *self.add_norm_act_layer(norm, n_ch=4 * n_df)]]
+        blocks += [[nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1, stride=1),
+                    *self.add_norm_act_layer(norm, n_ch=8 * n_df)]]
+        blocks += [[nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1, stride=1)]]
 
         self.n_blocks = len(blocks)
         for i in range(self.n_blocks):
             setattr(self, 'block_{}'.format(i), nn.Sequential(*blocks[i]))
 
         self.apply(partial(self.init_weights, type=init_type, mode=fan_mode, negative_slope=negative_slope,
-                           nonlinearity=act))
+                           nonlinearity=opt.C_act))
 
         self.to_CUDA(gpu_id)
 
@@ -120,9 +173,9 @@ class PatchCritic(BaseNetwork):
 
     def forward(self, x):
         result = [x]
-        for i in range(self.n_blocks):
-            block = getattr(self, 'block_{}'.format(i))
-            result.append(block(result[-1]))
+        for i in range(self.n_blocks - 1):
+            result.append(self.act(getattr(self, 'block_{}'.format(i))(result[-1])))
+        result.append(getattr(self, 'block_{}'.format(self.n_blocks - 1))(result[-1]))
 
         return result[1:]  # except for the input
 
@@ -132,7 +185,7 @@ class Generator(BaseNetwork):
         super(Generator, self).__init__()
         act = self.get_act_layer(opt.G_act, inplace=True)
         fan_mode = opt.fan_mode
-        gpu_id = opt.gpu_id
+        gpu_id = opt.gpu_ids
         init_type = opt.init_type
         input_ch = opt.input_ch
         n_downsample = opt.n_downsample
@@ -142,41 +195,26 @@ class Generator(BaseNetwork):
         norm = self.get_norm_layer(opt.norm_type)
         output_ch = opt.output_ch
         pad = self.get_pad_layer(opt.pad_type)
-        trans_unit = self.get_trans_unit(opt.trans_type)
-        self.opt = opt
+        trans_unit = self.get_trans_unit(opt.trans_unit)
 
-        encoder = []
-        encoder += [pad(3), nn.Conv2d(input_ch, n_gf, kernel_size=7, padding=0)]
-        encoder += [norm(n_gf), act] if norm else [act]
-        for _ in range(n_downsample):
-            encoder += [pad(1), nn.Conv2d(n_gf, 2 * n_gf, kernel_size=3, padding=0, stride=2)]
-            encoder += [norm(n_gf), act] if norm else [act]
-            n_gf *= 2
+        self.encoder = Encoder(input_ch, n_gf, n_downsample, act=act, norm=norm, pad=pad)
 
-        translator = []
-        for _ in range(n_residual):
-            translator += [trans_unit(n_gf, pad=pad, norm=norm, act=act)]
+        if trans_unit.__name__ == 'ResidualBlock':
+            self.translator = ResidualNetwork(n_residual, n_gf, act, norm, pad, kernel_size=3)
 
-        decoder_layer = []
-        for _ in range(n_downsample):
-            if norm:
-                decoder_layer += [[nn.ConvTranspose2d(n_gf, n_gf // 2, kernel_size=3, padding=1, stride=2,
-                                                      output_padding=1), norm(n_gf), act]]
-            else:
-                decoder_layer += [[nn.ConvTranspose2d(n_gf, n_gf // 2, kernel_size=3, padding=1, stride=2,
-                                                      output_padding=1), act]]
-            n_gf //= 2
+        elif trans_unit.__name__ == 'ResidualDenseBlock':
+            growth_rate = opt.growth_rate
+            RDB_ch = opt.RDB_ch
+            n_dense_layer = opt.n_dense_layer
 
-        decoder_layer += [[pad(3), nn.Conv2d(n_gf, output_ch, kernel_size=7, padding=0), nn.Tanh()]]
+            self.translator = ResidualDenseNetwork(n_gf * 2 ** n_downsample, n_residual, RDB_ch, growth_rate,
+                                                   n_dense_layer, act, norm, pad, kernel_size=3)
 
-        self.encoder = nn.Sequential(*encoder)
-        self.translator = nn.Sequential(*translator)
-
-        for i, layer in enumerate(decoder_layer):
-            setattr(self, 'decoder_level_{}'.format(i), nn.Sequential(*layer))
+        self.decoder = ProgressiveDecoder(n_gf * 2 ** n_downsample, output_ch, n_downsample, act=act, norm=norm,
+                                          pad=pad, tanh=True)
 
         self.apply(partial(self.init_weights, type=init_type, mode=fan_mode, negative_slope=negative_slope,
-                           nonlinearity=act))
+                           nonlinearity=opt.G_act))
 
         self.to_CUDA(gpu_id)
 
@@ -187,18 +225,14 @@ class Generator(BaseNetwork):
         if trans_type == 'RB':
             unit = ResidualBlock
         elif trans_type == 'RDB':
-            unit = partialmethod(ResidualDenseBlock.__init__, growth_rate=self.opt.growth_rate,
-                                 n_dense_layer=self.opt.n_dense_layer)
+            unit = ResidualDenseBlock
         else:
             raise NotImplementedError("Invalid transfer unit {}. Please check transfer_type option.".format(trans_type))
 
         return unit
 
-    def forward(self, x, lod):
-        x = self.translator(self.encoder(x))
-
-        for i in range(lod):
-            x = getattr(self, 'decoder_level_{}'.format(i))(x)
+    def forward(self, x, level):
+        x = self.decoder(self.translator(self.encoder(x)), level)
 
         return x
 
@@ -210,9 +244,8 @@ class DenseLayer(BaseNetwork):
         norm = self.get_norm_layer(norm) if isinstance(norm, str) else norm
         pad = self.get_pad_layer(pad) if isinstance(pad, str) else pad
 
-        layer = []
-        layer += [pad(1), nn.Conv2d(n_ch, growth_rate, kernel_size=kernel_size, padding=0, stride=1, bias=False)]
-        layer += [norm(growth_rate), act] if norm else [act]
+        layer = [pad(1), nn.Conv2d(n_ch, growth_rate, kernel_size=kernel_size, padding=0, stride=1, bias=False)]
+        layer += self.add_norm_act_layer(norm, n_ch=growth_rate, act=act)
 
         self.layer = nn.Sequential(*layer)
 
@@ -223,19 +256,122 @@ class DenseLayer(BaseNetwork):
         return x
 
 
-class ResidualBlock(nn.Module):
+class Decoder(BaseNetwork):
+    def __init__(self, input_ch, output_ch, n_upsample, act, kernel_size=3, pad=None, tanh=True):
+        super(Decoder, self).__init__()
+        ch = input_ch
+        ps = kernel_size // 2  # padding size
+
+        up_layers = []
+        for i in range(n_upsample):
+            up_layers += [nn.ConvTranspose2d(ch, ch//2, kernel_size=kernel_size, padding=1, stride=2, output_padding=1,
+                                             bias=True), act]
+            ch //= 2
+        up_layers += [pad(ps), nn.Conv2d(ch, output_ch, kernel_size=kernel_size, padding=0, stride=1, bias=True)]
+        up_layers[-1].append(nn.Tanh()) if tanh else None
+
+        self.model = nn.Sequential(*up_layers)
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class Encoder(BaseNetwork):
+    def __init__(self, input_ch, n_gf, n_downsample, act='relu', kernel_size=3, norm='InstanceNorm2d', pad=None):
+        super(Encoder, self).__init__()
+        act = self.get_act_layer(act, inplace=True) if isinstance(act, str) else act
+        norm = self.get_norm_layer(norm) if isinstance(norm, str) else norm
+        pad = self.get_pad_layer(pad) if isinstance(pad, str) else pad
+
+        encoder = [pad(1), nn.Conv2d(input_ch, n_gf, kernel_size=kernel_size, padding=0, stride=1)]
+        encoder += self.add_norm_act_layer(norm, n_ch=n_gf, act=act)
+
+        for _ in range(n_downsample):
+            encoder += [pad(1), nn.Conv2d(n_gf, 2 * n_gf, kernel_size=kernel_size, padding=0, stride=2)]
+            encoder += self.add_norm_act_layer(norm, n_ch=2 * n_gf, act=act)
+            n_gf *= 2
+
+        self.model = nn.Sequential(*encoder)
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class ProgressiveDecoder(BaseNetwork):
+    def __init__(self, input_ch, output_ch, n_upsample, act, kernel_size=3, norm=None, pad=None, tanh=True):
+        super(ProgressiveDecoder, self).__init__()
+        ps = kernel_size // 2  # padding size
+        rgb_layers = []
+        up_layers = []
+
+        ch = input_ch
+        if tanh:
+            rgb_layers += [[pad(ps), nn.Conv2d(ch, output_ch, kernel_size=kernel_size, padding=0, stride=1, bias=True),
+                            nn.Tanh()]]
+
+            for _ in range(n_upsample):
+                ch //= 2
+                rgb_layers += [[pad(ps), nn.Conv2d(ch, output_ch, kernel_size=kernel_size, padding=0, stride=1,
+                                                   bias=True), nn.Tanh()]]
+
+        else:
+            rgb_layers += [[pad(ps), nn.Conv2d(ch, output_ch, kernel_size=kernel_size, padding=0, stride=1, bias=True)]]
+
+            for _ in range(n_upsample):
+                ch //= 2
+                rgb_layers += [[pad(ps), nn.Conv2d(ch, output_ch, kernel_size=kernel_size, padding=0, stride=1,
+                                                   bias=True)]]
+
+        ch = input_ch
+        for _ in range(n_upsample):
+            up_layers += [[nn.ConvTranspose2d(ch, ch // 2, kernel_size=kernel_size, padding=1, stride=2,
+                                              output_padding=1, bias=True),
+                           *self.add_norm_act_layer(norm, n_ch=ch // 2, act=act)]]
+            ch //= 2
+
+        for i, layer in enumerate(rgb_layers):
+            setattr(self, 'RGB_level_{}'.format(i), nn.Sequential(*layer))
+
+        for i, layer in enumerate(up_layers):
+            setattr(self, 'Fractional_strided_conv_{}'.format(i), nn.Sequential(*layer))
+
+    def forward(self, x, level):
+        for i in range(level):
+            x = getattr(self, 'Fractional_strided_conv_{}'.format(i))(x)
+
+        x = getattr(self, 'RGB_level_{}'.format(level))(x)
+
+        return x
+
+
+class ResidualBlock(BaseNetwork):
     def __init__(self, n_ch, act, norm, pad, kernel_size=3):
         super(ResidualBlock, self).__init__()
-        block = []
+        block = [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1)]
+        block += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
         block += [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1)]
-        block += [norm(n_ch), act] if norm else [act]
-        block += [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1)]
-        block += [norm(n_ch)] if norm else []
+        block += self.add_norm_act_layer(norm, n_ch=n_ch)
 
         self.block = nn.Sequential(*block)
 
     def forward(self, x):
         x = x + self.block(x)
+
+        return x
+
+
+class ResidualNetwork(BaseNetwork):
+    def __init__(self, n_block, n_ch, act, norm, pad, kernel_size=3):
+        super(ResidualNetwork, self).__init__()
+
+        for i in range(n_block):
+            setattr(self, 'ResidualBlock_{}'.format(i), ResidualBlock(n_ch, act, norm, pad, kernel_size=kernel_size))
+
+        self.n_block = n_block
+
+    def forward(self, x):
+        for i in range(self.n_block):
+            x = getattr(self, 'ResidualBlock_{}'.format(i))(x)
 
         return x
 
@@ -246,14 +382,52 @@ class ResidualDenseBlock(BaseNetwork):
         init_n_ch = n_ch
 
         block = []
-        for i in range(n_dense_layer):
-            block.append(DenseLayer(n_ch, growth_rate, kernel_size=kernel_size, act=act, norm=norm, pad=pad))
+        for _ in range(n_dense_layer):
+            block += [DenseLayer(n_ch, growth_rate, kernel_size=kernel_size, act=act, norm=norm, pad=pad)]
             n_ch += growth_rate
-        block.append(nn.Conv2d(n_ch, init_n_ch, kernel_size=1, padding=0, stride=1, bias=False))
+        block += [nn.Conv2d(n_ch, init_n_ch, kernel_size=1, padding=0, stride=1, bias=False)]  # local feature fusion
         self.block = nn.Sequential(*block)
 
     def forward(self, x):
         y = self.block(x)
+        x = x + y  # local residual learning
+
+        return x
+
+
+class ResidualDenseNetwork(BaseNetwork):
+    def __init__(self, input_ch, n_block, n_ch, growth_rate, n_dense_layer, act, norm, pad, kernel_size=3):
+        super(ResidualDenseNetwork, self).__init__()
+
+        F0 = [nn.Conv2d(input_ch, n_ch, kernel_size=1, padding=0, stride=1, bias=True)]
+        F0 += self.add_norm_act_layer(norm, n_ch=n_ch)
+
+        for i in range(n_block):
+            setattr(self, 'ResidualDenseBlock_{}'.format(i), ResidualDenseBlock(n_ch, growth_rate, n_dense_layer, act,
+                                                                                norm, pad, kernel_size=kernel_size))
+
+        GFF = [nn.Conv2d(n_block * n_ch, n_ch, kernel_size=1, padding=0, stride=1, bias=True)]
+        GFF += self.add_norm_act_layer(norm, n_ch=n_ch)
+        GFF += [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=3, padding=0, stride=1, bias=True)]
+        GFF += self.add_norm_act_layer(norm, n_ch=n_ch)
+
+        F_last = [nn.Conv2d(n_ch, input_ch, kernel_size=1, padding=0, stride=1, bias=True)]
+        F_last += self.add_norm_act_layer(norm, n_ch=input_ch, act=act)
+
+        self.F0 = nn.Sequential(*F0)
+        self.GFF = nn.Sequential(*GFF)
+        self.n_block = n_block
+        self.F_last = nn.Sequential(*F_last)
+
+    def forward(self, x):
+        x = self.F0(x)
+        results = [x]
+        for i in range(self.n_block):
+            results.append(getattr(self, 'ResidualDenseBlock_{}'.format(i))(results[-1]))
+        cat = torch.cat(results[1:], dim=1)
+        y = self.GFF(cat)
         x = x + y
+
+        x = self.F_last(x)
 
         return x

@@ -2,7 +2,6 @@ if __name__ == '__main__':
     import os
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import torch
-    import numpy as np
     from option import TrainOption
     from pipeline import CustomDataset
     from utils import Manager
@@ -12,10 +11,10 @@ if __name__ == '__main__':
 
     opt = TrainOption().parse()
     if opt.GAN_type == 'LSGAN':
-        from networks import Discriminator as Adversarial, Generator
+        from networks import PatchCritic as Adversarial, Generator
         from loss import LSGANLoss as Loss
 
-    elif opt.GAN_type == 'WGANGP':
+    elif opt.GAN_type == 'WGAN_GP':
         from networks import PatchCritic as Adversarial, Generator
         from loss import WGANGPLoss as Loss
 
@@ -48,15 +47,19 @@ if __name__ == '__main__':
                 # lod_in += 1. / nb_transition
                 # lod_in = np.clip(lod_in, lod, lod + 1.0)
 
+                if USE_CUDA:
+                    device = torch.device('cuda', opt.gpu_ids)
+                    for k, v in data_dict.items():
+                        data_dict.update({k: v.to(device)})
+
                 A_loss, G_loss, generated_tensor = criterion(A, G, lod, data_dict)
+                A_optim.zero_grad()
+                A_loss.backward()
+                A_optim.step()
 
                 G_optim.zero_grad()
                 G_loss.backward()
                 G_optim.step()
-
-                A_optim.zero_grad()
-                A_loss.backward()
-                A_optim.step()
 
                 package = {'lod': lod,
                            'current_step': current_step,

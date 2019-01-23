@@ -122,13 +122,46 @@ def model_namer(*elements, **k_elements):
 
 class Manager(object):
     def __init__(self, opt):
-        self.opt = opt
+        self.GAN_type = opt.GAN_type
+        self.model_dir = opt.model_dir
+        self.log = os.path.join(self.model_dir, 'log.txt')
 
-    @staticmethod
-    def report_loss(package):
-        print("LOD: {} [{:.{prec}}%] Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}}".format(package['lod'],
-                                                package['current_step']/package['total_step']*100,
-                                                package['current_step'], package['A_loss'], package['G_loss'], prec=4))
+        if self.GAN_type == 'LSGAN':
+            with open(self.log, 'wt') as log:
+                log.write('Level, Current_step, D_loss, G_loss, FM_loss\n')
+
+        elif self.GAN_type == 'WGAN_GP':
+            with open(self.log, 'wt') as log:
+                log.write('Level, Current_step, C_loss, G_loss, GP_loss, FM_loss\n')
+
+        else:
+            raise NotImplementedError
+
+        self.display_freq = opt.display_freq
+        self.image_dir = opt.image_dir
+        self.image_mode = opt.image_mode
+        self.report_freq = opt.report_freq
+        self.save_freq = opt.save_freq
+
+    def report_loss(self, package):
+        if self.GAN_type == 'LSGAN':
+            inf = [package['Level'], package['Current_step'], package['A_loss'].detach().item(),
+                   package['G_loss'].detach().item(), package['FM']]
+
+            print("Level: {} Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} FM: {:.{prec}}".
+                  format(*inf, prec=4))
+
+            with open(self.log, 'a') as log:
+                log.write('{}, {}, {:.{prec}}, {:.{prec}, {:.{prec}}\n'.format(*inf, prec=4))
+
+        elif self.GAN_type == 'WGAN_GP':
+            inf = [package['Level'], package['Current_step'], package['A_loss'].detach().item(),
+                   package['G_loss'].detach().item(), package['GP'], package['FM']]
+            print("Level: {} Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} GP: {:.{prec}} FM: {:.{prec}}".
+                  format(*inf, prec=4))
+
+            with open(self.log, 'a') as log:
+                log.write('{}, {}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}\n'.format(*inf, prec=4))
 
     @staticmethod
     def adjust_dynamic_range(data, drange_in, drange_out):
@@ -154,29 +187,29 @@ class Manager(object):
     def save_image(self, image_tensor, path):
         np_image = self.tensor2image(image_tensor)
         pil_image = Image.fromarray(np_image)
-        pil_image.save(path, self.opt.image_mode)
+        pil_image.save(path, self.image_mode)
 
     def save(self, package, image=False, model=False):
         if image:
-            path_real = os.path.join(self.opt.image_dir, str(package['current_step']) + '_' + 'real.png')
-            path_fake = os.path.join(self.opt.image_dir, str(package['current_step']) + '_' + 'fake.png')
+            path_real = os.path.join(self.image_dir, str(package['Current_step']) + '_' + 'real.png')
+            path_fake = os.path.join(self.image_dir, str(package['Current_step']) + '_' + 'fake.png')
             self.save_image(package['target_tensor'], path_real)
             self.save_image(package['generated_tensor'], path_fake)
 
         elif model:
-            path_A = os.path.join(self.opt.model_dir, str(package['current_step']) + '_' + 'A.pt')
-            path_G = os.path.join(self.opt.model_dir, str(package['current_step']) + '_' + 'G.pt')
+            path_A = os.path.join(self.model_dir, str(package['Current_step']) + '_' + 'A.pt')
+            path_G = os.path.join(self.model_dir, str(package['Current_step']) + '_' + 'G.pt')
             torch.save(package['A_state_dict'], path_A)
             torch.save(package['G_state_dict'], path_G)
 
     def __call__(self, package):
-        if package['current_step'] % self.opt.display_freq == 0:
+        if package['Current_step'] % self.display_freq == 0:
             self.save(package, image=True)
 
-        if package['current_step'] % self.opt.report_freq == 0:
+        if package['Current_step'] % self.report_freq == 0:
             self.report_loss(package)
 
-        if package['current_step'] % self.opt.save_freq == 0:
+        if package['Current_step'] % self.save_freq == 0:
             self.save(package, model=True)
 
 

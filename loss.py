@@ -111,6 +111,7 @@ class WGANGPLoss(Loss):
     def __init__(self, opt):
         super(WGANGPLoss, self).__init__(opt)
         self.C_condition = opt.C_condition
+        self.drift_lambda = opt.drift_lambda
         self.GP_lambda = opt.GP_lambda
         self.gpu_id = opt.gpu_ids
 
@@ -129,13 +130,14 @@ class WGANGPLoss(Loss):
         gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=output_grid,
                         create_graph=True, retain_graph=True, only_inputs=True)[0]
 
-        GP = (((gradient ** 2).sqrt() - 1.) ** 2).mean()
+        GP = (((gradient ** 2 + 1e-8).sqrt() - 1.) ** 2).mean()
 
         return GP
 
     def __call__(self, C, G, lod, data_dict):
         C_loss = 0
         G_loss = 0
+        package = {}
 
         fake = G(data_dict['input_tensor'], lod)
         target = data_dict['target_tensor']
@@ -153,7 +155,8 @@ class WGANGPLoss(Loss):
         real_features = C(C_input_real)
         C_loss += (fake_features[-1] - real_features[-1]).mean()
 
-        C_loss += self.GP_lambda * self.calc_GP(C, output=C_input_fake.detach(), target=C_input_real.detach())
+        GP = self.calc_GP(C, output=C_input_fake.detach(), target=C_input_real.detach())
+        C_loss += self.GP_lambda * GP
 
         if self.C_condition:
             C_input_fake = torch.cat([C_input, fake], dim=1)
@@ -165,6 +168,11 @@ class WGANGPLoss(Loss):
         G_loss += -fake_features[-1].mean()
 
         if self.FM:
-            G_loss += self.FM_lambda * self.calc_FM(fake_features=fake_features, real_features=real_features)
+            FM = self.calc_FM(fake_features=fake_features, real_features=real_features)
+            package.update({'FM': FM.detach().item()})
+            G_loss += self.FM_lambda * FM
 
-        return C_loss, G_loss, fake
+        package.update({'A_loss': C_loss, 'G_loss': G_loss, 'GP': GP.detach().item(), 'generated_tensor': fake.detach(),
+                        'A_state_dict': C.state_dict(), 'G_state_dict': G.state_dict(), 'target_tensor': target})
+
+        return package

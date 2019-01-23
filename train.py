@@ -35,7 +35,6 @@ if __name__ == '__main__':
     total_step = opt.n_data * opt.n_epochs * opt.max_lod
     start_time = datetime.datetime.now()
     for lod in range(opt.max_lod + 1):
-        # lod_in = lod
         dataset = CustomDataset(opt, lod)
         data_loader = torch.utils.data.DataLoader(dataset=dataset,
                                                   batch_size=opt.batch_size,
@@ -52,24 +51,16 @@ if __name__ == '__main__':
                     for k, v in data_dict.items():
                         data_dict.update({k: v.to(device)})
 
-                A_loss, G_loss, generated_tensor = criterion(A, G, lod, data_dict)
+                package = criterion(A, G, lod, data_dict)
                 A_optim.zero_grad()
-                A_loss.backward()
+                package['A_loss'].backward()
                 A_optim.step()
 
                 G_optim.zero_grad()
-                G_loss.backward()
+                package['G_loss'].backward()
                 G_optim.step()
 
-                package = {'lod': lod,
-                           'current_step': current_step,
-                           'total_step': total_step,
-                           'A_loss': A_loss.detach().item(),
-                           'G_loss': G_loss.detach().item(),
-                           'A_state_dict': A.state_dict(),
-                           'G_state_dict': G.state_dict(),
-                           'target_tensor': data_dict['target_tensor'],
-                           'generated_tensor': generated_tensor.detach()}
+                package.update({'Level': lod, 'Current_step': current_step})
 
                 manager(package)
 

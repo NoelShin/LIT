@@ -1,6 +1,5 @@
 import os
 import torch
-import torch.nn as nn
 import numpy as np
 from PIL import Image
 
@@ -25,6 +24,7 @@ def configure(opt):
             opt.half = False
             opt.image_size = (1024, 2048)
             opt.n_gf = 32
+
         opt.max_lod = opt.n_downsample
         opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.max_lod),
                               2 ** (np.log2(opt.image_size[1]) - opt.max_lod))
@@ -42,6 +42,7 @@ def configure(opt):
             opt.half = False
             opt.image_size = (1024, 1024)
             opt.n_gf = 32
+
         opt.max_lod = opt.n_downsample
         opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.max_lod),
                               2 ** (np.log2(opt.image_size[1]) - opt.max_lod))
@@ -145,19 +146,19 @@ class Manager(object):
 
     def report_loss(self, package):
         if self.GAN_type == 'LSGAN':
-            inf = [package['Level'], package['Current_step'], package['A_loss'].detach().item(),
+            inf = [package['Current_step'], package['A_loss'].detach().item(),
                    package['G_loss'].detach().item(), package['FM']]
 
-            print("Level: {} Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} FM: {:.{prec}}".
+            print("Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} FM: {:.{prec}}".
                   format(*inf, prec=4))
 
             with open(self.log, 'a') as log:
                 log.write('{}, {}, {:.{prec}}, {:.{prec}, {:.{prec}}\n'.format(*inf, prec=4))
 
         elif self.GAN_type == 'WGAN_GP':
-            inf = [package['Level'], package['Current_step'], package['A_loss'].detach().item(),
+            inf = [package['Current_step'], package['A_loss'].detach().item(),
                    package['G_loss'].detach().item(), package['GP'], package['FM']]
-            print("Level: {} Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} GP: {:.{prec}} FM: {:.{prec}}".
+            print("Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} GP: {:.{prec}} FM: {:.{prec}}".
                   format(*inf, prec=4))
 
             with open(self.log, 'a') as log:
@@ -211,16 +212,3 @@ class Manager(object):
 
         if package['Current_step'] % self.save_freq == 0:
             self.save(package, model=True)
-
-
-class PixelNorm(nn.Module):
-    def __init__(self, eps=1e-8):
-        super(PixelNorm, self).__init__()
-        self.__name__ = 'PixelNorm'
-        self.eps = eps
-
-    def forward(self, x):
-        x = x * torch.rsqrt(torch.mean(x.pow(2), dim=1, keepdim=True) + self.eps)
-
-        return x
-    

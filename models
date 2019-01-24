@@ -1,0 +1,164 @@
+from functools import partial
+import torch.nn as nn
+import torchvision
+from .networks.base_network import BaseNetwork
+
+
+class Critic(BaseNetwork):
+    def __init__(self, opt):
+        super(Critic, self).__init__()
+        self.n_C = opt.n_C
+        for i in range(opt.n_C):
+            setattr(self, 'Scale_{}'.format(i), PatchCritic(opt))
+
+        self.apply(partial(self.init_weights, type=opt.init_type, mode=opt.fan_mode, negative_slope=opt.negative_slope,
+                           nonlinearity=opt.C_act))
+
+        self.to_CUDA(opt.gpu_id)
+
+        print(self)
+        print("the number of C parameters: ", sum(p.numel() for p in self.parameters() if p.requires_grad))
+
+    def forward(self, x):
+        result = []
+        for i in range(self.n_C):
+            result.append(getattr(self, 'Scale_{}'.format(i))(x))
+            x = nn.AvgPool2d(kernel_size=3, padding=1, stride=2, count_include_pad=False)(x)
+
+        return result
+
+
+class Generator(BaseNetwork):
+    def __init__(self, opt):
+        super(Generator, self).__init__()
+        act = self.get_act_layer(opt.G_act, inplace=True)
+        norm = self.get_norm_layer(opt.norm_type)
+        pad = self.get_pad_layer(opt.pad_type)
+
+        self.encoder = self.get_encoder(opt, act, norm, pad)
+        self.translator = self.get_trans_network(opt, act, norm, pad)
+        self.decoder = self.get_decoder(opt, act, norm, pad)
+
+        self.apply(partial(self.init_weights, type=opt.init_type, mode=opt.fan_mode, negative_slope=opt.negative_slope,
+                           nonlinearity=opt.G_act))
+
+        self.to_CUDA(opt.gpu_id)
+
+        print(self)
+        print("the number of G parameters: ", sum(p.numel() for p in self.parameters() if p.requires_grad))
+
+    @staticmethod
+    def get_decoder(opt, act, norm, pad, kernel_size=3):
+        if opt.progression:
+            from .networks.decoders import ProgressiveDecoder
+            decoder = ProgressiveDecoder(opt.n_gf * 2 ** opt.n_downsample, opt.output_ch, opt.n_downsample,
+                                         kernel_size=kernel_size, act=act, norm=norm, pad=pad, tanh=True)
+        else:
+            from .networks.decoders import Decoder
+            decoder = Decoder(opt.n_gf * 2 ** opt.n_downsample, opt.output_ch, opt.n_downsample,
+                              kernel_size=kernel_size, act=act, norm=norm, pad=pad, tanh=True)
+        return decoder
+
+    @staticmethod
+    def get_encoder(opt, act, norm, pad, kernel_size=3):
+        from .networks.encoders import Encoder
+        encoder = Encoder(opt.input_ch, opt.n_gf, opt.n_downsample, kernel_size=kernel_size,
+                          act=act, norm=norm, pad=pad)
+        return encoder
+
+    @staticmethod
+    def get_trans_network(opt, act, norm, pad, kernel_size=3):
+        if opt.trans_network == 'RCAN':
+            from .networks.translators import ResidualChannelAttentionNetwork
+            net = ResidualChannelAttentionNetwork(opt.n_groups, opt.n_blocks, opt.n_gf * 2 ** opt.n_downsample,
+                                                  opt.redection_rate, kernel_size=kernel_size, act=act, norm=norm,
+                                                  pad=pad)
+
+        elif opt.trans_network == 'RN':
+            from .networks.translators import ResidualNetwork
+            net = ResidualNetwork(opt.n_residual, opt.n_gf * 2 ** opt.n_downsample, kernel_size=kernel_size, act=act,
+                                  norm=norm, pad=pad)
+
+        elif opt.trans_network == 'RDN':
+            from .networks.translators import ResidualDenseNetwork
+            net = ResidualDenseNetwork(opt.n_gf * 2 ** opt.n_downsample, opt.n_residual, opt.RDB_ch, opt.growth_rate,
+                                       opt.n_dense_layer, kernel_size=kernel_size, act=act, norm=norm, pad=pad)
+
+        else:
+            raise NotImplementedError("Invalid translation unit {}. Please check trans_type option.".
+                                      format(opt.trans_unit))
+        return net
+
+    def forward(self, x):
+        x = self.decoder(self.translator(self.encoder(x)))
+
+        return x
+
+
+class PatchCritic(BaseNetwork):
+    def __init__(self, opt):
+        super(BaseNetwork, self).__init__()
+        self.act = nn.LeakyReLU(0.2, inplace=False)  # to avoid inplace activation. inplace activation cause error WGAN_GP
+        input_channel = opt.input_ch + opt.output_ch if opt.C_condition else opt.output_ch
+        n_df = opt.n_df
+        norm = self.get_norm_layer(opt.norm_type) if opt.C_norm else None
+
+        blocks = [[nn.Conv2d(input_channel, n_df, kernel_size=4, padding=1, stride=2)]]
+        blocks += [[nn.Conv2d(n_df, 2 * n_df, kernel_size=4, padding=1, stride=2),
+                    *self.add_norm_act_layer(norm, n_ch=2 * n_df)]]
+        blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=2),
+                    *self.add_norm_act_layer(norm, n_ch=4 * n_df)]]
+        blocks += [[nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1, stride=1),
+                    *self.add_norm_act_layer(norm, n_ch=8 * n_df)]]
+        blocks += [[nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1, stride=1)]]
+
+        self.n_blocks = len(blocks)
+        for i in range(self.n_blocks):
+            setattr(self, 'block_{}'.format(i), nn.Sequential(*blocks[i]))
+
+    def forward(self, x):
+        result = [x]
+        for i in range(self.n_blocks - 1):
+            result.append(self.act(getattr(self, 'block_{}'.format(i))(result[-1])))
+        result.append(getattr(self, 'block_{}'.format(self.n_blocks - 1))(result[-1]))
+
+        return result[1:]  # except for the input
+
+
+class VGG19(nn.Module):
+    def __init__(self):
+        super(VGG19, self).__init__()
+        vgg_pretrained_layers = torchvision.models.vgg19(pretrained=True).features
+        self.block_1 = nn.Sequential()
+        self.block_2 = nn.Sequential()
+        self.block_3 = nn.Sequential()
+        self.block_4 = nn.Sequential()
+        self.block_5 = nn.Sequential()
+
+        for i in range(2):
+            self.block_1.add_module(str(i), vgg_pretrained_layers[i])
+
+        for i in range(2, 7):
+            self.block_2.add_module(str(i), vgg_pretrained_layers[i])
+
+        for i in range(7, 12):
+            self.block_3.add_module(str(i), vgg_pretrained_layers[i])
+
+        for i in range(12, 21):
+            self.block_4.add_module(str(i), vgg_pretrained_layers[i])
+
+        for i in range(21, 30):
+            self.block_5.add_module(str(i), vgg_pretrained_layers[i])
+
+        for param in self.parameters():
+            param.requires_grad = False
+
+    def forward(self, x):
+        out_1 = self.block_1(x)
+        out_2 = self.block_2(out_1)
+        out_3 = self.block_3(out_2)
+        out_4 = self.block_4(out_3)
+        out_5 = self.block_5(out_4)
+        out = [out_1, out_2, out_3, out_4, out_5]
+
+        return out

@@ -6,7 +6,7 @@ from PIL import Image
 
 def configure(opt):
     opt.USE_CUDA = True if opt.gpu_ids != -1 else False
-
+    opt.beta1, opt.beta2 = (0.0, 0.9) if opt.progression else (0.5, 0.9)
     opt.format = 'png'
     opt.n_df = 64
     if opt.dataset_name == 'Cityscapes':
@@ -52,8 +52,8 @@ def configure(opt):
         raise NotImplementedError("Please check dataset_name. It should be in ['Cityscapes', 'Custom'].")
 
     dataset_name = opt.dataset_name
-    model_name = model_namer(opt.trans_unit, opt.image_height, opt.GAN_type, opt.norm_type, A_norm=opt.C_norm,
-                             condition=opt.C_condition)
+    model_name = model_namer(opt.trans_network, opt.GAN_type, growth_rate=opt.growth_rate,
+                             patch=opt.patch_size, progression=opt.progression)
     make_dir(dataset_name, model_name, type='checkpoints')
 
     if opt.is_train:
@@ -129,11 +129,11 @@ class Manager(object):
 
         if self.GAN_type == 'LSGAN':
             with open(self.log, 'wt') as log:
-                log.write('Level, Current_step, D_loss, G_loss, FM_loss\n')
+                log.write('Epoch, Current_step, C_loss, G_loss, FM_loss, Runtime\n')
 
         elif self.GAN_type == 'WGAN_GP':
             with open(self.log, 'wt') as log:
-                log.write('Level, Current_step, C_loss, G_loss, GP_loss, FM_loss\n')
+                log.write('Epoch, Current_step, C_loss, G_loss, GP_loss, FM_loss, Runtime\n')
 
         else:
             raise NotImplementedError
@@ -141,25 +141,24 @@ class Manager(object):
         self.display_freq = opt.display_freq
         self.image_dir = opt.image_dir
         self.image_mode = opt.image_mode
+        self.progression = opt.progression
         self.report_freq = opt.report_freq
         self.save_freq = opt.save_freq
 
     def report_loss(self, package):
         if self.GAN_type == 'LSGAN':
-            inf = [package['Current_step'], package['A_loss'].detach().item(),
+            inf = [package['Epoch'], package['Current_step'], package['A_loss'].detach().item(),
                    package['G_loss'].detach().item(), package['FM']]
-
-            print("Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} FM: {:.{prec}}".
-                  format(*inf, prec=4))
+            print("Epoch: {} Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} FM: {:.{prec}}".format(*inf, prec=4))
 
             with open(self.log, 'a') as log:
-                log.write('{}, {}, {:.{prec}}, {:.{prec}, {:.{prec}}\n'.format(*inf, prec=4))
+                log.write('{}, {}, {:.{prec}}, {:.{prec}}, {:.{prec}}\n'.format(*inf, prec=4))
 
         elif self.GAN_type == 'WGAN_GP':
-            inf = [package['Current_step'], package['A_loss'].detach().item(),
+            inf = [package['Epoch'], package['Current_step'], package['A_loss'].detach().item(),
                    package['G_loss'].detach().item(), package['GP'], package['FM']]
-            print("Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} GP: {:.{prec}} FM: {:.{prec}}".
-                  format(*inf, prec=4))
+            print("Epoch: {} Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} GP: {:.{prec}} FM: {:.{prec}},"
+                  .format(*inf, prec=4))
 
             with open(self.log, 'a') as log:
                 log.write('{}, {}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}\n'.format(*inf, prec=4))
@@ -192,8 +191,12 @@ class Manager(object):
 
     def save(self, package, image=False, model=False):
         if image:
-            path_real = os.path.join(self.image_dir, str(package['Current_step']) + '_' + 'real.png')
-            path_fake = os.path.join(self.image_dir, str(package['Current_step']) + '_' + 'fake.png')
+            if self.progression:
+                path_real = os.path.join(self.image_dir, str(package['lod']) + '_' + str(package['Epoch']) + '_' + 'real.png')
+                path_fake = os.path.join(self.image_dir, str(package['lod']) + '_' + str(package['Epoch']) + '_' + 'fake.png')
+            else:
+                path_real = os.path.join(self.image_dir,  str(package['Epoch']) + '_' + 'real.png')
+                path_fake = os.path.join(self.image_dir, str(package['Epoch']) + '_' + 'fake.png')
             self.save_image(package['target_tensor'], path_real)
             self.save_image(package['generated_tensor'], path_fake)
 
@@ -212,3 +215,18 @@ class Manager(object):
 
         if package['Current_step'] % self.save_freq == 0:
             self.save(package, model=True)
+
+
+def update_lr(old_lr, n_epoch_decay, D_optim, G_optim):
+    delta_lr = old_lr/n_epoch_decay
+    new_lr = old_lr - delta_lr
+
+    for param_group in D_optim.param_groups:
+        param_group['lr'] = new_lr
+
+    for param_group in G_optim.param_groups:
+        param_group['lr'] = new_lr
+
+    print("Learning rate has been updated from {} to {}.".format(old_lr, new_lr))
+
+    return new_lr

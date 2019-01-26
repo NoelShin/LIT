@@ -21,14 +21,14 @@ class Loss(object):
         else:
             self.GP = False
 
-        if opt.VGG_loss:
-            from .models import VGG19
+        if opt.VGG:
+            from models import VGG19
             self.VGG = True
             self.VGGNet = VGG19()
             self.VGG_lambda = opt.VGG_lambda
 
             if opt.gpu_ids != -1:
-                self.VGGNet = self.VGGNet.cuda(opt.gpu_ids)
+                self.VGGNet = self.VGGNet.cuda(0)
                 self.VGG_weights = [1.0/32, 1.0/16, 1.0/8, 1.0/4, 1.0]
 
         else:
@@ -47,7 +47,7 @@ class Loss(object):
             for i in range(len(real_features)):
                 FM += self.FM_criterion(fake_features[i], real_features[i].detach())
 
-            return FM
+        return FM
 
     def calc_GP(self, C, output, target):
         GP = 0
@@ -101,22 +101,21 @@ class LSGANLoss(Loss):
             grid = torch.FloatTensor(tensor.shape).fill_(0.0)
 
         if self.gpu_id != -1:
-            grid = grid.cuda(self.gpu_id)
+            grid = grid.cuda(0)
 
         return grid
 
     def __call__(self, C, G, data_dict, lod=None):
         loss_C = 0
         loss_G = 0
+        package = {}
 
         input = data_dict['input_tensor']
-        fake = G(input, lod)
+        fake = G(input, lod) if self.progression else G(input)
         target = data_dict['target_tensor']
 
-        if self.progression:
-            input = data_dict['D_input_tensor']
-
         if self.condition:
+            input = data_dict['C_input_tensor']
             input_fake = torch.cat([input, fake.detach()], dim=1)
             input_real = torch.cat([input, target], dim=1)
 
@@ -150,6 +149,7 @@ class LSGANLoss(Loss):
                 for j in range(len(fake_features[0])):
                     loss_FM += self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
                 loss_G += loss_FM * self.FM_lambda * 1/self.n_C
+                package.update({'FM': loss_FM.detach().item()})
 
         if self.VGG:
             loss_VGG = 0
@@ -158,7 +158,10 @@ class LSGANLoss(Loss):
 
             loss_G += self.FM_lambda * loss_VGG
 
-        return loss_C, loss_G, fake
+        package.update({'A_loss': loss_C, 'G_loss': loss_G, 'generated_tensor': fake.detach(),
+                        'A_state_dict': C.state_dict(), 'G_state_dict': G.state_dict(), 'target_tensor': target})
+
+        return package
 
 
 class WGANGPLoss(Loss):
@@ -168,17 +171,18 @@ class WGANGPLoss(Loss):
         self.drift_lambda = opt.drift_lambda
         self.GP_lambda = opt.GP_lambda
         self.gpu_id = opt.gpu_ids
+        self.progression = opt.progression
 
     def __call__(self, C, G, data_dict, lod=None):
         C_loss = 0
         G_loss = 0
         package = {}
 
-        fake = G(data_dict['input_tensor'], lod)
+        fake = G(data_dict['input_tensor'], lod) if self.progression else G(data_dict['input_tensor'])
         target = data_dict['target_tensor']
 
         if self.condition:
-            input = data_dict['D_input_tensor']
+            input = data_dict['C_input_tensor']
             input_fake = torch.cat([input, fake.detach()], dim=1)
             input_real = torch.cat([input, target], dim=1)
         else:
@@ -213,7 +217,7 @@ class WGANGPLoss(Loss):
             VGG = 0
             fake_features_VGG, real_features_VGG = self.VGGNet(fake), self.VGGNet(target)
             VGG += self.calc_FM(fake_features=fake_features_VGG, real_features=real_features_VGG,
-                                     weights=self.VGG_weights)
+                                weights=self.VGG_weights)
 
             G_loss += self.VGG_lambda * VGG
 

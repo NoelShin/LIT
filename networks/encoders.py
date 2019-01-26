@@ -1,5 +1,5 @@
 import torch.nn as nn
-from base_network import BaseNetwork
+from .base_network import BaseNetwork
 
 
 class Encoder(BaseNetwork):

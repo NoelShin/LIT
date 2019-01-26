@@ -1,5 +1,5 @@
 import torch.nn as nn
-from base_network import BaseNetwork
+from .base_network import BaseNetwork
 
 
 class Decoder(BaseNetwork):
@@ -16,7 +16,7 @@ class Decoder(BaseNetwork):
             ch //= 2
 
         up_layers += [pad(ps), nn.Conv2d(ch, output_ch, kernel_size=kernel_size, padding=0, stride=1, bias=True)]
-        up_layers[-1].append(nn.Tanh()) if tanh else None
+        up_layers += [nn.Tanh()] if tanh else None
 
         self.model = nn.Sequential(*up_layers)
 

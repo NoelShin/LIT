@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from modules.base_module import BaseModule
+from .modules.base_module import BaseModule
 
 
 class BaseNetwork(BaseModule):
@@ -43,7 +43,7 @@ class BaseNetwork(BaseModule):
     def to_CUDA(self, gpu_id):
         gpu_id = gpu_id[0] if isinstance(gpu_id, list) else gpu_id
         if gpu_id != -1:
-            self.to(torch.device('cuda', gpu_id))
+            self.to(torch.device('cuda', 0))
         else:
             pass
 

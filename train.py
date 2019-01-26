@@ -2,18 +2,29 @@ if __name__ == '__main__':
     import os
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import torch
-    from networks import Critic as Adversarial, Generator
+    from models import Critic as Adversarial
     from option import TrainOption
     from pipeline import CustomDataset
-    from utils import Manager
+    from utils import Manager, update_lr
     import datetime
 
     torch.backends.cudnn.benchmark = True
 
     opt = TrainOption().parse()
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
+    if opt.progression:
+        if opt.U_net:
+            from models import ProgressiveUNetGenerator as Generator
+        else:
+            from models import ProgressiveGenerator as Generator
+    else:
+        if opt.U_net:
+            from models import UNetGenerator as Generator
+        else:
+            from models import Generator
+
     if opt.GAN_type == 'LSGAN':
         from loss import LSGANLoss as Loss
-
     elif opt.GAN_type == 'WGAN_GP':
         from loss import WGANGPLoss as Loss
 
@@ -30,25 +41,27 @@ if __name__ == '__main__':
     manager = Manager(opt)
 
     current_step = 0
-    #nb_transition = opt.n_data * opt.n_epochs / 2
+    lr = opt.lr
+    package = {}
     start_time = datetime.datetime.now()
     if opt.progression:
-        total_step = opt.n_data * opt.n_epochs * opt.max_lod
-        for lod in range(opt.max_lod + 1):
+        for lod in range(opt.n_downsample + 1):
             dataset = CustomDataset(opt, lod)
             data_loader = torch.utils.data.DataLoader(dataset=dataset,
                                                       batch_size=opt.batch_size,
                                                       num_workers=opt.n_workers,
                                                       shuffle=opt.shuffle)
-            for epoch in range(opt.n_epochs):
+            for epoch in range(opt.n_epochs_per_lod):
+                package.update({'Epoch': epoch})
                 for _, data_dict in enumerate(data_loader):
+                    current_step += 1
 
                     if USE_CUDA:
-                        device = torch.device('cuda', opt.gpu_ids)
+                        device = torch.device('cuda', 0)
                         for k, v in data_dict.items():
                             data_dict.update({k: v.to(device)})
 
-                    package = criterion(A, G, lod, data_dict)
+                    package.update(criterion(A, G, data_dict, lod))
                     A_optim.zero_grad()
                     package['A_loss'].backward()
                     A_optim.step()
@@ -63,6 +76,8 @@ if __name__ == '__main__':
 
                     if opt.debug:
                         break
+                if opt.debug:
+                    break
 
     else:
         dataset = CustomDataset(opt)
@@ -71,14 +86,16 @@ if __name__ == '__main__':
                                                   num_workers=opt.n_workers,
                                                   shuffle=opt.shuffle)
         for epoch in range(opt.n_epochs):
+            package.update({'Epoch': epoch})
             for _, data_dict in enumerate(data_loader):
-
+                time = datetime.datetime.now()
+                current_step += 1
                 if USE_CUDA:
                     device = torch.device('cuda', opt.gpu_ids)
                     for k, v in data_dict.items():
                         data_dict.update({k: v.to(device)})
 
-                package = criterion(A, G, data_dict)
+                package.update(criterion(A, G, data_dict))
                 A_optim.zero_grad()
                 package['A_loss'].backward()
                 A_optim.step()
@@ -87,12 +104,14 @@ if __name__ == '__main__':
                 package['G_loss'].backward()
                 G_optim.step()
 
-                package.update({'Current_step': current_step})
+                package.update({'Current_step': current_step, 'running_time': datetime.datetime.now() - time})
 
                 manager(package)
 
                 if opt.debug:
                     break
 
+            if epoch > opt.epoch_decay:
+                lr = update_lr(lr, opt.n_epochs - opt.epoch_decay, A_optim, G_optim)
+
     print("Total time taken: ", datetime.datetime.now() - start_time)
-    

@@ -192,8 +192,8 @@ class Manager(object):
     def save(self, package, image=False, model=False):
         if image:
             if self.progression:
-                path_real = os.path.join(self.image_dir, str(package['lod']) + '_' + str(package['Epoch']) + '_' + 'real.png')
-                path_fake = os.path.join(self.image_dir, str(package['lod']) + '_' + str(package['Epoch']) + '_' + 'fake.png')
+                path_real = os.path.join(self.image_dir, str(package['Level']) + '_' + str(package['Epoch']) + '_' + 'real.png')
+                path_fake = os.path.join(self.image_dir, str(package['Level']) + '_' + str(package['Epoch']) + '_' + 'fake.png')
             else:
                 path_real = os.path.join(self.image_dir,  str(package['Epoch']) + '_' + 'real.png')
                 path_fake = os.path.join(self.image_dir, str(package['Epoch']) + '_' + 'fake.png')

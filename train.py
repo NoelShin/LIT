@@ -46,7 +46,7 @@ if __name__ == '__main__':
     start_time = datetime.datetime.now()
     if opt.progression:
         for lod in range(opt.n_downsample + 1):
-            dataset = CustomDataset(opt, lod)
+            dataset = CustomDataset(opt, lod=lod)
             data_loader = torch.utils.data.DataLoader(dataset=dataset,
                                                       batch_size=opt.batch_size,
                                                       num_workers=opt.n_workers,
@@ -91,7 +91,7 @@ if __name__ == '__main__':
                 time = datetime.datetime.now()
                 current_step += 1
                 if USE_CUDA:
-                    device = torch.device('cuda', opt.gpu_ids)
+                    device = torch.device('cuda', 0)
                     for k, v in data_dict.items():
                         data_dict.update({k: v.to(device)})
 

@@ -54,7 +54,8 @@ class CustomDataset(torch.utils.data.Dataset):
         self.min_image_size = opt.min_image_size
         self.image_size = opt.image_size
         self.is_train = is_train
-        self.lod = lod
+
+        self.lod = opt.n_downsample if lod is None else lod
 
     def get_transform(self, normalize=True, lod_size=False):
         transform_list = []

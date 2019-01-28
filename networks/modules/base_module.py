@@ -21,7 +21,7 @@ class BaseModule(nn.Module):
                 layer += [norm]
 
             else:
-                raise NotImplementedError
+                raise NotImplementedError(norm)
 
             if act:
                 layer += [act]

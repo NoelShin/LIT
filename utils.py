@@ -52,8 +52,17 @@ def configure(opt):
         raise NotImplementedError("Please check dataset_name. It should be in ['Cityscapes', 'Custom'].")
 
     dataset_name = opt.dataset_name
-    model_name = model_namer(opt.trans_network, opt.GAN_type, growth_rate=opt.growth_rate,
-                             patch=opt.patch_size, progression=opt.progression)
+
+    if opt.trans_network == 'RCAN':
+        model_name = model_namer(opt.trans_network, opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB, progression=opt.progression,
+                                 u_net=opt.U_net)
+
+    elif opt.trans_network == 'RDN':
+        model_name = model_namer(opt.trans_network, growth_rate=opt.growth_rate,
+                                 patch=opt.patch_size, progression=opt.progression)
+    elif opt.trans_network == 'RN':
+        model_name = model_namer(opt.trans_network, patch=opt.patch_size, progression=opt.progression, u_net=opt.U_net)
+
     make_dir(dataset_name, model_name, type='checkpoints')
 
     if opt.is_train:

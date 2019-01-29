@@ -7,20 +7,20 @@ from .modules.residual_channel_attention_block import ResidualGroup
 
 
 class ResidualChannelAttentionNetwork(BaseNetwork):
-    def __init__(self, n_groups, n_blocks, n_ch, reduction_rate, act, norm, pad, kernel_size=3, init_ch=None):
+    def __init__(self, n_groups, n_blocks, n_ch, reduction_rate, act, norm, pad, kernel_size=3, input_ch=None):
         super(ResidualChannelAttentionNetwork, self).__init__()
         ps = kernel_size // 2
         network =[]
-        if init_ch != n_ch:
-            network += [nn.Conv2d(init_ch, n_ch, kernel_size=1, padding=0, stride=1)]
+        if input_ch != n_ch:
+            network += [nn.Conv2d(input_ch, n_ch, kernel_size=1, padding=0, stride=1)]
 
         network += [ResidualGroup(n_blocks, n_ch, reduction_rate, kernel_size, act, norm, pad)
                     for _ in range(n_groups)]
         network += [pad(ps), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1, bias=True)]
         network += self.add_norm_act_layer(norm, n_ch=n_ch)
 
-        if init_ch != n_ch:
-            network += [nn.Conv2d(n_ch, init_ch, kernel_size=1, padding=0, stride=1)]
+        if input_ch != n_ch:
+            network += [nn.Conv2d(n_ch, input_ch, kernel_size=1, padding=0, stride=1)]
 
         self.network = nn.Sequential(*network)
 

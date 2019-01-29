@@ -14,12 +14,19 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
     if opt.progression:
         if opt.U_net:
-            from models import ProgressiveUNetGenerator as Generator
+            if opt.U_net_gate:
+                from models import ProgressiveGatedUNetGenerater as Generator
+            else:
+                from models import ProgressiveUNetGenerator as Generator
         else:
             from models import ProgressiveGenerator as Generator
     else:
         if opt.U_net:
-            from models import UNetGenerator as Generator
+            if opt.U_net_gate:
+                from models import GatedUNetGenerator as Generator
+
+            else:
+                from models import UNetGenerator as Generator
         else:
             from models import Generator
 

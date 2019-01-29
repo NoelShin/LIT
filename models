@@ -149,7 +149,7 @@ class GatedUNetGenerator(BaseGenerator):
 
         x = self.translator(results[-1])
         for i in range(self.n_downsample - 1, -1, -1):  # 3 2 1 0
-            x = getattr(self, 'Up_layer_{}'.format(i))(x) + getattr('Gate_layer_{}'.format(i))(results[i])
+            x = getattr(self, 'Up_layer_{}'.format(i))(x) + getattr(self, 'Gate_layer_{}'.format(i))(results[i])
         x = self.layer_last(x)
 
         return x

@@ -43,8 +43,9 @@ class BaseOption(object):
                                  help='if you want progressive training')
         self.parser.add_argument('--trans_network', type=str, default='RCAN',
                                  help='Network you want to use for image translation. "RN" for residual network, "RDN" for Residual dense network, "RCAN" for residual channel attention network')
-        self.parser.add_argument('--U_net', action='store_true', default=False,
+        self.parser.add_argument('--U_net', action='store_true', default=True,
                                  help='if you want to use U-net skip connection')
+        self.parser.add_argument('--U_net_gate', action='store_true', default=True, help='if you want gating for U-net')
         self.parser.add_argument('--n_enhance_blocks', type=int, default=1,
                                  help='the number of enhancement blocks per level in decoder')
 

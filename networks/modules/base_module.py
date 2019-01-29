@@ -8,39 +8,23 @@ class BaseModule(nn.Module):
         super(BaseModule, self).__init__()
 
     @staticmethod
-    def add_norm_act_layer(norm=None, act=None, n_ch=None, double_par=False):
+    def add_norm_act_layer(norm=None, act=None, n_ch=None):
         layer = []
-        if not double_par:
-            if isinstance(norm, partial):
-                layer += [norm(n_ch)]
+        
+        if isinstance(norm, partial):
+            layer += [[norm(n_ch)]]
 
-            elif not norm:
-                pass
+        elif not norm:
+            pass
 
-            elif norm.__name__ == 'PixelNorm':
-                layer += [norm]
-
-            else:
-                raise NotImplementedError(norm)
-
-            if act:
-                layer += [act]
+        elif norm.__name__ == 'PixelNorm':
+            layer += [[norm]]
 
         else:
-            if isinstance(norm, partial):
-                layer += [[norm(n_ch)]]
+            raise NotImplementedError
 
-            elif not norm:
-                pass
-
-            elif norm.__name__ == 'PixelNorm':
-                layer += [[norm]]
-
-            else:
-                raise NotImplementedError
-
-            if act:
-                layer[-1].append(act)
+        if act:
+            layer[-1].append(act)
 
         return layer
 

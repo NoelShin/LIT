@@ -105,8 +105,8 @@ class GatedUNetGenerator(BaseGenerator):
         pad = self.get_pad_layer(opt.pad_type)
 
         n_ch = opt.n_gf
+        n_downsample = opt.n_downsample
         layer_first = [pad(1), nn.Conv2d(opt.input_ch, n_ch, kernel_size=3, padding=0)]
-        layer_first += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
         self.layer_first = nn.Sequential(*layer_first)
 
         layer_last = [pad(1), nn.Conv2d(n_ch, opt.output_ch, kernel_size=3, padding=0)]
@@ -114,24 +114,26 @@ class GatedUNetGenerator(BaseGenerator):
         self.layer_last = nn.Sequential(*layer_last)
 
         gate_layer = [[ChannelAttentionLayer(n_ch)]]
-        for i in range(opt.n_downsample):
-            encoder_layer = [pad(1), nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=0, stride=2)]
-            encoder_layer += self.add_norm_act_layer(norm, n_ch=2 * n_ch, act=act)
-            gate_layer += [[ChannelAttentionLayer(2 * n_ch)]] if i != 3 else []
+        for i in range(n_downsample):
+            encoder_layer = self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
+            encoder_layer += [pad(1), nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=0, stride=2)]
+            encoder_layer += self.add_norm_act_layer(norm, n_ch=2 * n_ch, act=act) if i == n_downsample - 1 else None
+            gate_layer += [[ChannelAttentionLayer(2 * n_ch)]] if i != n_downsample - 1 else []
 
             decoder_layer = [nn.ConvTranspose2d(2 * n_ch, n_ch, kernel_size=3, padding=1, stride=2,
                                                 output_padding=1)]
-            decoder_layer += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
+            decoder_norm_act_layer = self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
             n_ch *= 2
 
             setattr(self, 'Down_layer_{}'.format(i), nn.Sequential(*encoder_layer))
             setattr(self, 'Up_layer_{}'.format(i), nn.Sequential(*decoder_layer))
+            setattr(self, 'Up_norm_act_layer_{}'.format(i), nn.Sequential(*decoder_norm_act_layer))
 
         for i in range(len(gate_layer)):
             setattr(self, 'Gate_layer_{}'.format(i), nn.Sequential(*gate_layer[i]))
 
         self.translator = self.get_trans_network(opt, act, norm, pad, input_ch=n_ch)
-        self.n_downsample = opt.n_downsample
+        self.n_downsample = n_downsample
 
         self.apply(partial(self.init_weights, type=opt.init_type, mode=opt.fan_mode, negative_slope=opt.negative_slope,
                            nonlinearity=opt.G_act))
@@ -149,7 +151,8 @@ class GatedUNetGenerator(BaseGenerator):
 
         x = self.translator(results[-1])
         for i in range(self.n_downsample - 1, -1, -1):  # 3 2 1 0
-            x = getattr(self, 'Up_layer_{}'.format(i))(x) + getattr(self, 'Gate_layer_{}'.format(i))(results[i])
+            x = getattr(self, 'Up_layer_{}'.format(i))(x) + getattr('Gate_layer_{}'.format(i))(results[i])
+            x = getattr(self, 'Up_norm_act_layer_{}'.format(i))(x)
         x = self.layer_last(x)
 
         return x
@@ -341,29 +344,30 @@ class UNetGenerator(BaseGenerator):
         pad = self.get_pad_layer(opt.pad_type)
 
         n_ch = opt.n_gf
+        n_downsample = opt.n_downsample
         layer_first = [pad(1), nn.Conv2d(opt.input_ch, n_ch, kernel_size=3, padding=0)]
-        layer_first += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
-        layer_first += [ChannelAttentionLayer(n_ch)] if opt.U_net_gate else []
         self.layer_first = nn.Sequential(*layer_first)
 
         layer_last = [pad(1), nn.Conv2d(n_ch, opt.output_ch, kernel_size=3, padding=0)]
         layer_last += [nn.Tanh()] if opt.tanh else None
         self.layer_last = nn.Sequential(*layer_last)
-        for i in range(opt.n_downsample):
-                encoder_layer = [pad(1), nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=0, stride=2)]
-                encoder_layer += self.add_norm_act_layer(norm, n_ch=2 * n_ch, act=act)
-                encoder_layer += [ChannelAttentionLayer(2 * n_ch)] if opt.U_net_gate else []
+
+        for i in range(n_downsample):
+                encoder_layer = self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
+                encoder_layer += [pad(1), nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=0, stride=2)]
+                encoder_layer += self.add_norm_act_layer(norm, n_ch=2 * n_ch, act=act) if i == n_downsample - 1 else None
 
                 decoder_layer = [nn.ConvTranspose2d(2 * n_ch, n_ch, kernel_size=3, padding=1, stride=2,
                                                     output_padding=1)]
-                decoder_layer += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
+                decoder_norm_act_layer = self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
                 n_ch *= 2
 
                 setattr(self, 'Down_layer_{}'.format(i), nn.Sequential(*encoder_layer))
                 setattr(self, 'Up_layer_{}'.format(i), nn.Sequential(*decoder_layer))
+                setattr(self, 'Up_norm_act_layer_{}'.format(i), nn.Sequential(*decoder_norm_act_layer))
 
         self.translator = self.get_trans_network(opt, act, norm, pad, input_ch=n_ch)
-        self.n_downsample = opt.n_downsample
+        self.n_downsample = n_downsample
 
         self.apply(partial(self.init_weights, type=opt.init_type, mode=opt.fan_mode, negative_slope=opt.negative_slope,
                            nonlinearity=opt.G_act))
@@ -381,8 +385,8 @@ class UNetGenerator(BaseGenerator):
 
         x = self.translator(results[-1])
         for i in range(self.n_downsample - 1, -1, -1):  # 3 2 1 0
-            x = getattr(self, 'Up_layer_{}'.format(i))(x)
-            x = x + results[i]
+            x = results[i] + getattr(self, 'Up_layer_{}'.format(i))(x)
+            x = getattr(self, 'Up_norm_act_layer_{}'.format(i))(x)
         x = self.layer_last(x)
 
         return x

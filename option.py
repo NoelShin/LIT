@@ -19,9 +19,10 @@ class BaseOption(object):
         self.parser.add_argument('--n_C', type=int, default=2, help='how many critics you want in model')
         self.parser.add_argument('--n_downsample', type=int, default=4,
                                  help='how many times you want downsample the original data')
-        
+
         # about RCAN
-        self.parser.add_argument('--n_RCAB', type=int, default=20, help='the number of RCAB blocks per a residual group')
+        self.parser.add_argument('--n_RCAB', type=int, default=20,
+                                 help='the number of RCAB blocks per a residual group')
         self.parser.add_argument('--n_RG', type=int, default=6, help='the number of residual groups')
         self.parser.add_argument('--RCA_ch', type=int, default=256, help='the number of ch RCA has')
         self.parser.add_argument('--reduction_rate', type=int, default=16)
@@ -36,12 +37,17 @@ class BaseOption(object):
         self.parser.add_argument('--n_RB', type=int, default=9, help='the number of residual blocks')
 
         # about architecture
-        self.parser.add_argument('--patch_size', type=int, default=70, help='size of patch a critic will see. Choose among [16, 70]')
-        self.parser.add_argument('--progression', action='store_true', default=False, help='if you want progressive training')
-        self.parser.add_argument('--trans_network', type=str, default='RCAN', help='Network you want to use for image translation. "RN" for residual network, "RDN" for Residual dense network, "RCAN" for residual channel attention network')
-        self.parser.add_argument('--U_net', action='store_true', default=False, help='if you want to use U-net skip connection')
-        self.parser.add_argument('--n_enhance_blocks', type=int, default=1, help='the number of enhancement blocks per level in decoder')
-        
+        self.parser.add_argument('--patch_size', type=int, default=70,
+                                 help='size of patch a critic will see. Choose among [16, 70]')
+        self.parser.add_argument('--progression', action='store_true', default=False,
+                                 help='if you want progressive training')
+        self.parser.add_argument('--trans_network', type=str, default='RCAN',
+                                 help='Network you want to use for image translation. "RN" for residual network, "RDN" for Residual dense network, "RCAN" for residual channel attention network')
+        self.parser.add_argument('--U_net', action='store_true', default=False,
+                                 help='if you want to use U-net skip connection')
+        self.parser.add_argument('--n_enhance_blocks', type=int, default=1,
+                                 help='the number of enhancement blocks per level in decoder')
+
         self.parser.add_argument('--n_workers', type=int, default=2, help='how many threads you want to use')
         self.parser.add_argument('--pad_type', type=str, default='reflection', help='[reflection, replication, zero]')
         self.parser.add_argument('--use_boundary_map', action='store_true', default=True,

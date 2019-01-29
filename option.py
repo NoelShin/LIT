@@ -21,10 +21,10 @@ class BaseOption(object):
                                  help='how many times you want downsample the original data')
 
         # about RCAN
-        self.parser.add_argument('--n_RCAB', type=int, default=20,
+        self.parser.add_argument('--n_RCAB', type=int, default=8,
                                  help='the number of RCAB blocks per a residual group')
-        self.parser.add_argument('--n_RG', type=int, default=6, help='the number of residual groups')
-        self.parser.add_argument('--RCA_ch', type=int, default=256, help='the number of ch RCA has')
+        self.parser.add_argument('--n_RG', type=int, default=4, help='the number of residual groups')
+        self.parser.add_argument('--RCA_ch', type=int, default=512, help='the number of ch RCA has')
         self.parser.add_argument('--reduction_rate', type=int, default=16)
 
         # about RDN
@@ -43,7 +43,7 @@ class BaseOption(object):
                                  help='if you want progressive training')
         self.parser.add_argument('--trans_network', type=str, default='RCAN',
                                  help='Network you want to use for image translation. "RN" for residual network, "RDN" for Residual dense network, "RCAN" for residual channel attention network')
-        self.parser.add_argument('--U_net', action='store_true', default=True,
+        self.parser.add_argument('--U_net', action='store_true', default=False,
                                  help='if you want to use U-net skip connection')
         self.parser.add_argument('--U_net_gate', action='store_true', default=True, help='if you want gating for U-net')
         self.parser.add_argument('--n_enhance_blocks', type=int, default=1,

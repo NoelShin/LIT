@@ -24,8 +24,6 @@ class ResidualChannelAttentionBlock(BaseModule):
         block = [pad(ps), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1, bias=True)]
         block += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
         block += [pad(ps), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1, bias=True)]
-        block += self.add_norm_act_layer(norm, n_ch=n_ch)
-
         block += [ChannelAttentionLayer(n_ch, reduction_rate)]
 
         self.block = nn.Sequential(*block)

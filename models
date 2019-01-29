@@ -279,7 +279,8 @@ class UNetGenerator(BaseNetwork):
                 encoder_layer = [pad(1), nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=0, stride=2)]
                 encoder_layer += self.add_norm_act_layer(norm, n_ch=2 * n_ch, act=act)
 
-                decoder_layer = [pad(1), nn.ConvTranspose2d(2 * n_ch, n_ch, kernel_size=3, padding=0, stride=2)]
+                decoder_layer = [nn.ConvTranspose2d(2 * n_ch, n_ch, kernel_size=3, padding=1, stride=2,
+                                                    output_padding=1)]
                 decoder_layer += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
                 n_ch *= 2
 
@@ -306,7 +307,7 @@ class UNetGenerator(BaseNetwork):
         x = self.translator(results[-1])
         for i in range(self.n_downsample - 1, -1, -1):  # 3 2 1 0
             x = getattr(self, 'Up_layer_{}'.format(i))(x)
-            x = x + results[i - 1]
+            x = x + results[i]
         x = self.layer_last(x)
 
         return x
@@ -333,4 +334,3 @@ class UNetGenerator(BaseNetwork):
             raise NotImplementedError("Invalid translation unit {}. Please check trans_type option.".
                                       format(opt.trans_unit))
         return net
-        

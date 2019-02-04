@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from .base_module import BaseModule
+from .residual_channel_attention_block import ChannelAttentionLayer
 
 
 class DenseLayer(BaseModule):
@@ -32,10 +33,10 @@ class ResidualDenseBlock(BaseModule):
             block += [DenseLayer(n_ch, growth_rate, kernel_size=kernel_size, act=act, norm=norm, pad=pad)]
             n_ch += growth_rate
         block += [nn.Conv2d(n_ch, init_n_ch, kernel_size=1, padding=0, stride=1, bias=False)]  # local feature fusion
+        self.CA = ChannelAttentionLayer(init_n_ch)
         self.block = nn.Sequential(*block)
 
     def forward(self, x):
-        y = self.block(x)
-        x = x + y  # local residual learning
+        x = self.CA(x) + self.block(x)  # local residual learning
 
         return x

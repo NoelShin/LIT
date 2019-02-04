@@ -3,7 +3,7 @@ import torch.nn as nn
 from .base_network import BaseNetwork
 from .modules.residual_block import ResidualBlock
 from .modules.residual_dense_block import ResidualDenseBlock
-from .modules.residual_channel_attention_block import ResidualGroup
+from .modules.residual_channel_attention_block import ChannelAttentionLayer, ResidualGroup
 
 
 class ResidualChannelAttentionNetwork(BaseNetwork):
@@ -41,6 +41,7 @@ class ResidualDenseNetwork(BaseNetwork):
 
         self.GFF = nn.Sequential(*GFF)
         self.n_blocks = n_blocks
+        self.CA = ChannelAttentionLayer(n_ch)
 
     def forward(self, x):
         results = [x]
@@ -48,7 +49,7 @@ class ResidualDenseNetwork(BaseNetwork):
             results.append(getattr(self, 'ResidualDenseBlock_{}'.format(i))(results[-1]))
         cat = torch.cat(results[1:], dim=1)
         y = self.GFF(cat)
-        x = x + y
+        x = self.CA(x) + y
 
         return x
 

@@ -106,11 +106,11 @@ class GatedUNetGenerator(BaseGenerator):
 
         n_ch = opt.n_gf
         n_downsample = opt.n_downsample
-        layer_first = [pad(1), nn.Conv2d(opt.input_ch, n_ch, kernel_size=3, padding=0)]
+        layer_first = [pad(3), nn.Conv2d(opt.input_ch, n_ch, kernel_size=7, padding=0)]
         layer_first += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
         self.layer_first = nn.Sequential(*layer_first)
 
-        layer_last = [pad(1), nn.Conv2d(n_ch, opt.output_ch, kernel_size=3, padding=0)]
+        layer_last = [pad(3), nn.Conv2d(n_ch, opt.output_ch, kernel_size=7, padding=0)]
         layer_last += [nn.Tanh()] if opt.tanh else None
         self.layer_last = nn.Sequential(*layer_last)
 
@@ -348,11 +348,11 @@ class UNetGenerator(BaseGenerator):
 
         n_ch = opt.n_gf
         n_downsample = opt.n_downsample
-        layer_first = [pad(1), nn.Conv2d(opt.input_ch, n_ch, kernel_size=3, padding=0)]
+        layer_first = [pad(3), nn.Conv2d(opt.input_ch, n_ch, kernel_size=7, padding=0)]
         layer_first += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
         self.layer_first = nn.Sequential(*layer_first)
 
-        layer_last = [pad(1), nn.Conv2d(n_ch, opt.output_ch, kernel_size=3, padding=0)]
+        layer_last = [pad(3), nn.Conv2d(n_ch, opt.output_ch, kernel_size=7, padding=0)]
         layer_last += [nn.Tanh()] if opt.tanh else None
         self.layer_last = nn.Sequential(*layer_last)
 

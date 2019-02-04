@@ -58,8 +58,8 @@ def configure(opt):
                                  u_net=opt.U_net)
 
     elif opt.trans_network == 'RDN':
-        model_name = model_namer(opt.trans_network, growth_rate=opt.growth_rate,
-                                 patch=opt.patch_size, progression=opt.progression)
+        model_name = model_namer('CA_', opt.trans_network, n_l=opt.n_dense_layers, RDB=opt.n_RDB, growth_rate=opt.growth_rate,
+                                 u_net=opt.U_net, gate=opt.U_net_gate)
     elif opt.trans_network == 'RN':
         model_name = model_namer(opt.trans_network, patch=opt.patch_size, progression=opt.progression, u_net=opt.U_net)
 
@@ -210,8 +210,8 @@ class Manager(object):
             self.save_image(package['generated_tensor'], path_fake)
 
         elif model:
-            path_A = os.path.join(self.model_dir, str(package['Current_step']) + '_' + 'A.pt')
-            path_G = os.path.join(self.model_dir, str(package['Current_step']) + '_' + 'G.pt')
+            path_A = os.path.join(self.model_dir, str(package['Epoch']) + '_' + 'A.pt')
+            path_G = os.path.join(self.model_dir, str(package['Epoch']) + '_' + 'G.pt')
             torch.save(package['A_state_dict'], path_A)
             torch.save(package['G_state_dict'], path_G)
 
@@ -222,7 +222,7 @@ class Manager(object):
         if package['Current_step'] % self.report_freq == 0:
             self.report_loss(package)
 
-        if package['Current_step'] % self.save_freq == 0:
+        if package['Epoch'] % self.save_freq == 0:
             self.save(package, model=True)
 
 

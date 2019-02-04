@@ -59,7 +59,7 @@ if __name__ == '__main__':
                                                       num_workers=opt.n_workers,
                                                       shuffle=opt.shuffle)
             for epoch in range(opt.n_epochs_per_lod):
-                package.update({'Epoch': epoch})
+                package.update({'Epoch': epoch + 1})
                 for _, data_dict in enumerate(data_loader):
                     current_step += 1
 
@@ -93,7 +93,7 @@ if __name__ == '__main__':
                                                   num_workers=opt.n_workers,
                                                   shuffle=opt.shuffle)
         for epoch in range(opt.n_epochs):
-            package.update({'Epoch': epoch})
+            package.update({'Epoch': epoch + 1})
             for _, data_dict in enumerate(data_loader):
                 time = datetime.datetime.now()
                 current_step += 1

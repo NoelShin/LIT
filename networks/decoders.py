@@ -15,7 +15,7 @@ class Decoder(BaseNetwork):
             up_layers += self.add_norm_act_layer(norm, n_ch=ch//2, act=act)
             ch //= 2
 
-        up_layers += [pad(ps), nn.Conv2d(ch, output_ch, kernel_size=kernel_size, padding=0, stride=1, bias=True)]
+        up_layers += [pad(3), nn.Conv2d(ch, output_ch, kernel_size=7, padding=0, stride=1, bias=True)]
         up_layers += [nn.Tanh()] if tanh else None
 
         self.model = nn.Sequential(*up_layers)

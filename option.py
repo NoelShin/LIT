@@ -21,16 +21,16 @@ class BaseOption(object):
                                  help='how many times you want downsample the original data')
 
         # about RCAN
-        self.parser.add_argument('--n_RCAB', type=int, default=8,
+        self.parser.add_argument('--n_RCAB', type=int, default=1,
                                  help='the number of RCAB blocks per a residual group')
-        self.parser.add_argument('--n_RG', type=int, default=4, help='the number of residual groups')
-        self.parser.add_argument('--RCA_ch', type=int, default=512, help='the number of ch RCA has')
+        self.parser.add_argument('--n_RG', type=int, default=6, help='the number of residual groups')
+        self.parser.add_argument('--RCA_ch', type=int, default=1024, help='the number of ch RCA has')
         self.parser.add_argument('--reduction_rate', type=int, default=16)
 
         # about RDN
-        self.parser.add_argument('--growth_rate', type=int, default=128)
-        self.parser.add_argument('--n_dense_layers', type=int, default=6, help='how many dense layers in a RDB')
-        self.parser.add_argument('--n_RDB', type=int, default=12, help='the number of residual dense blocks')
+        self.parser.add_argument('--growth_rate', type=int, default=512)
+        self.parser.add_argument('--n_dense_layers', type=int, default=4, help='how many dense layers in a RDB')
+        self.parser.add_argument('--n_RDB', type=int, default=4, help='the number of residual dense blocks')
         self.parser.add_argument('--RDB_ch', type=int, default=1024, help='the number of ch RDN started with')
 
         # about RN
@@ -41,9 +41,9 @@ class BaseOption(object):
                                  help='size of patch a critic will see. Choose among [16, 70]')
         self.parser.add_argument('--progression', action='store_true', default=False,
                                  help='if you want progressive training')
-        self.parser.add_argument('--trans_network', type=str, default='RCAN',
+        self.parser.add_argument('--trans_network', type=str, default='RDN',
                                  help='Network you want to use for image translation. "RN" for residual network, "RDN" for Residual dense network, "RCAN" for residual channel attention network')
-        self.parser.add_argument('--U_net', action='store_true', default=False,
+        self.parser.add_argument('--U_net', action='store_true', default=True,
                                  help='if you want to use U-net skip connection')
         self.parser.add_argument('--U_net_gate', action='store_true', default=True, help='if you want gating for U-net')
         self.parser.add_argument('--n_enhance_blocks', type=int, default=1,
@@ -93,7 +93,7 @@ class TrainOption(BaseOption):
         self.parser.add_argument('--norm_type', type=str, default='InstanceNorm2d',
                                  help='[BatchNorm2d, InstanceNorm2d, PixelNorm]')
         self.parser.add_argument('--report_freq', type=int, default=5)
-        self.parser.add_argument('--save_freq', type=int, default=100000)
+        self.parser.add_argument('--save_freq', type=int, default=10)
         self.parser.add_argument('--shuffle', action='store_true', default=True,
                                  help='if you want to shuffle the order')
         self.parser.add_argument('--tanh', action='store_true', default=True, help='if you want to use tanh for RGB')

@@ -9,7 +9,7 @@ class Encoder(BaseNetwork):
         norm = self.get_norm_layer(norm) if isinstance(norm, str) else norm
         pad = self.get_pad_layer(pad) if isinstance(pad, str) else pad
 
-        encoder = [pad(1), nn.Conv2d(input_ch, n_gf, kernel_size=kernel_size, padding=0, stride=1)]
+        encoder = [pad(3), nn.Conv2d(input_ch, n_gf, kernel_size=7, padding=0, stride=1)]
         encoder += self.add_norm_act_layer(norm, n_ch=n_gf, act=act)
 
         for _ in range(n_downsample):

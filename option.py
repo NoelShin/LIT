@@ -16,7 +16,6 @@ class BaseOption(object):
         self.parser.add_argument('--image_mode', type=str, default='png', help='extension for saving image')
         self.parser.add_argument('--negative_slope', type=float, default=0.2, help='inclination for negative part')
         self.parser.add_argument('--max_ch', type=int, default=2 ** 10, help='max_nb of channels in model')
-        self.parser.add_argument('--n_C', type=int, default=2, help='how many critics you want in model')
         self.parser.add_argument('--n_downsample', type=int, default=4,
                                  help='how many times you want downsample the original data')
 
@@ -37,8 +36,6 @@ class BaseOption(object):
         self.parser.add_argument('--n_RB', type=int, default=9, help='the number of residual blocks')
 
         # about architecture
-        self.parser.add_argument('--patch_size', type=int, default=70,
-                                 help='size of patch a critic will see. Choose among [16, 70]')
         self.parser.add_argument('--progression', action='store_true', default=False,
                                  help='if you want progressive training')
         self.parser.add_argument('--trans_network', type=str, default='RDN',
@@ -93,7 +90,7 @@ class TrainOption(BaseOption):
         self.parser.add_argument('--norm_type', type=str, default='InstanceNorm2d',
                                  help='[BatchNorm2d, InstanceNorm2d, PixelNorm]')
         self.parser.add_argument('--report_freq', type=int, default=5)
-        self.parser.add_argument('--save_freq', type=int, default=10)
+        self.parser.add_argument('--save_freq', type=int, default=29750)
         self.parser.add_argument('--shuffle', action='store_true', default=True,
                                  help='if you want to shuffle the order')
         self.parser.add_argument('--tanh', action='store_true', default=True, help='if you want to use tanh for RGB')

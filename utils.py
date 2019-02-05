@@ -9,6 +9,9 @@ def configure(opt):
     opt.beta1, opt.beta2 = (0.0, 0.9) if opt.progression else (0.5, 0.9)
     opt.format = 'png'
     opt.n_df = 64
+    opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.n_downsample),
+                          2 ** (np.log2(opt.image_size[1]) - opt.n_downsample))
+
     if opt.dataset_name == 'Cityscapes':
         if opt.use_boundary_map:
             opt.input_ch = 36
@@ -25,9 +28,6 @@ def configure(opt):
             opt.image_size = (1024, 2048)
             opt.n_gf = 32
 
-        opt.max_lod = opt.n_downsample
-        opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.max_lod),
-                              2 ** (np.log2(opt.image_size[1]) - opt.max_lod))
         opt.n_data = 2975
         opt.output_ch = 3
 
@@ -43,25 +43,31 @@ def configure(opt):
             opt.image_size = (1024, 1024)
             opt.n_gf = 32
 
-        opt.max_lod = opt.n_downsample
-        opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.max_lod),
-                              2 ** (np.log2(opt.image_size[1]) - opt.max_lod))
         opt.output_ch = 1
 
     else:
         raise NotImplementedError("Please check dataset_name. It should be in ['Cityscapes', 'Custom'].")
 
+    if opt.progression:
+        opt.n_C = 1
+        opt.patch_size = 16
+
+    else:
+        opt.n_C = 2
+        opt.patch_size = 70
+
     dataset_name = opt.dataset_name
 
     if opt.trans_network == 'RCAN':
-        model_name = model_namer(opt.trans_network, opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB, progression=opt.progression,
-                                 u_net=opt.U_net)
+        model_name = model_namer(opt.trans_network, opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
+                                 progression=opt.progression, u_net=opt.U_net)
 
     elif opt.trans_network == 'RDN':
-        model_name = model_namer('CA_', opt.trans_network, n_l=opt.n_dense_layers, RDB=opt.n_RDB, growth_rate=opt.growth_rate,
-                                 u_net=opt.U_net, gate=opt.U_net_gate)
+        model_name = model_namer('CA_', opt.trans_network, n_l=opt.n_dense_layers, RDB=opt.n_RDB,
+                                 growth_rate=opt.growth_rate, u_net=opt.U_net, gate=opt.U_net_gate)
+
     elif opt.trans_network == 'RN':
-        model_name = model_namer(opt.trans_network, patch=opt.patch_size, progression=opt.progression, u_net=opt.U_net)
+        model_name = model_namer(opt.trans_network, progression=opt.progression, u_net=opt.U_net)
 
     make_dir(dataset_name, model_name, type='checkpoints')
 
@@ -222,7 +228,7 @@ class Manager(object):
         if package['Current_step'] % self.report_freq == 0:
             self.report_loss(package)
 
-        if package['Epoch'] % self.save_freq == 0:
+        if package['Current_step'] % self.save_freq == 0:
             self.save(package, model=True)
 
 

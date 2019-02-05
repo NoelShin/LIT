@@ -8,7 +8,7 @@ from PIL import Image
 
 
 class CustomDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, lod=None):
+    def __init__(self, opt, level=None):
         super(CustomDataset, self).__init__()
         dataset_name = opt.dataset_name
         is_train = opt.is_train
@@ -55,17 +55,17 @@ class CustomDataset(torch.utils.data.Dataset):
         self.image_size = opt.image_size
         self.is_train = is_train
 
-        self.lod = opt.n_downsample if lod is None else lod
+        self.level = opt.n_downsample if level is None else level
 
-    def get_transform(self, normalize=True, lod_size=False):
+    def get_transform(self, normalize=True, level_size=False):
         transform_list = []
 
-        if not lod_size:
+        if not level_size:
             transform_list += [transforms.Resize(self.image_size, interpolation=Image.NEAREST)]
 
-        elif lod_size:
-            transform_list += [transforms.Resize((2 ** int((np.log2(self.min_image_size[0]) + self.lod)),
-                                                  2 ** int(np.log2(self.min_image_size[1]) + self.lod)),
+        elif level_size:
+            transform_list += [transforms.Resize((2 ** int((np.log2(self.min_image_size[0]) + self.level)),
+                                                  2 ** int(np.log2(self.min_image_size[1]) + self.level)),
                                                  interpolation=Image.NEAREST)]
 
         if self.is_train and self.coin:
@@ -115,38 +115,38 @@ class CustomDataset(torch.utils.data.Dataset):
                 self.coin = random.random() > 0.5
 
             label_array = Image.open(self.label_path_list[index])
-            label_tensor = self.get_transform(normalize=False, lod_size=False)(label_array) * 255.0
+            label_tensor = self.get_transform(normalize=False, level_size=False)(label_array) * 255.0
 
             instance_array = Image.open(self.instance_path_list[index])
-            instance_tensor = self.get_transform(normalize=False, lod_size=False)(instance_array)
+            instance_tensor = self.get_transform(normalize=False, level_size=False)(instance_array)
 
             input_tensor = self.encode_input(label_tensor, instance_tensor)
 
             target_array = Image.open(self.target_path_list[index])
-            target_tensor = self.get_transform(normalize=True, lod_size=True)(target_array)
+            target_tensor = self.get_transform(normalize=True, level_size=True)(target_array)
 
             data_dict = {'input_tensor': input_tensor, 'target_tensor': target_tensor}
 
             if self.condition:
-                C_label_tensor = self.get_transform(normalize=False, lod_size=True)(label_array) * 255.0
-                C_instance_tensor = self.get_transform(normalize=False, lod_size=True)(instance_array)
+                C_label_tensor = self.get_transform(normalize=False, level_size=True)(label_array) * 255.0
+                C_instance_tensor = self.get_transform(normalize=False, level_size=True)(instance_array)
                 C_input_tensor = self.encode_input(C_label_tensor, C_instance_tensor)
 
                 data_dict.update({'C_input_tensor': C_input_tensor})
 
         elif self.dataset_name == 'Custom':
             label_array = Image.open(self.label_path_list[index])
-            label_tensor = self.get_transform(normalize=True, lod_size=False)(label_array)
+            label_tensor = self.get_transform(normalize=True, level_size=False)(label_array)
 
             input_tensor = self.encode_input(label_tensor)
 
             target_array = Image.open(self.target_path_list[index])
-            target_tensor = self.get_transform(normalize=True, lod_size=True)(target_array)
+            target_tensor = self.get_transform(normalize=True, level_size=True)(target_array)
 
             data_dict = {'input_tensor': input_tensor, 'target_tensor': target_tensor}
 
             if self.condition:
-                C_label_tensor = self.get_transform(normalize=True, lod_size=True)(label_array)
+                C_label_tensor = self.get_transform(normalize=True, level_size=True)(label_array)
                 C_input_tensor = self.encode_input(C_label_tensor)
 
                 data_dict.update({'D_input_tensor': C_input_tensor})

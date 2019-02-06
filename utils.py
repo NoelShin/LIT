@@ -6,11 +6,8 @@ from PIL import Image
 
 def configure(opt):
     opt.USE_CUDA = True if opt.gpu_ids != -1 else False
-    opt.beta1, opt.beta2 = (0.0, 0.9) if opt.progression else (0.5, 0.9)
     opt.format = 'png'
     opt.n_df = 64
-    opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.n_downsample),
-                          2 ** (np.log2(opt.image_size[1]) - opt.n_downsample))
 
     if opt.dataset_name == 'Cityscapes':
         if opt.use_boundary_map:
@@ -22,10 +19,12 @@ def configure(opt):
         if opt.image_height == 512:
             opt.half = True
             opt.image_size = (512, 1024)
+            opt.n_downsample = 4
             opt.n_gf = 64
         elif opt.image_height == 1024:
             opt.half = False
             opt.image_size = (1024, 2048)
+            opt.n_downsample = 5
             opt.n_gf = 32
 
         opt.n_data = 2975
@@ -49,12 +48,17 @@ def configure(opt):
         raise NotImplementedError("Please check dataset_name. It should be in ['Cityscapes', 'Custom'].")
 
     if opt.progression:
+        opt.beta1, opt.beta2 = (0.0, 0.9)
         opt.n_C = 1
         opt.patch_size = 16
 
     else:
+        opt.beta1, opt.beta2 = (0.5, 0.9)
         opt.n_C = 2
         opt.patch_size = 70
+
+    opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.n_downsample),
+                          2 ** (np.log2(opt.image_size[1]) - opt.n_downsample))
 
     dataset_name = opt.dataset_name
 

@@ -2,6 +2,7 @@ if __name__ == '__main__':
     import os
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import torch
+    import numpy as np
     from models import Critic as Adversarial
     from option import TrainOption
     from pipeline import CustomDataset
@@ -49,26 +50,32 @@ if __name__ == '__main__':
 
     current_step = 0
     lr = opt.lr
+    n_epochs_per_lod = opt.n_epochs_per_lod
+    nb_transition = n_epochs_per_lod / 2
     package = {}
     start_time = datetime.datetime.now()
     if opt.progression:
-        for lod in range(opt.n_downsample + 1):
-            dataset = CustomDataset(opt, lod=lod)
+        for level in range(opt.n_downsample + 1):  # 0 1 2 3 4
+            level_in = level
+            dataset = CustomDataset(opt, lod=level)
             data_loader = torch.utils.data.DataLoader(dataset=dataset,
                                                       batch_size=opt.batch_size,
                                                       num_workers=opt.n_workers,
                                                       shuffle=opt.shuffle)
-            for epoch in range(opt.n_epochs_per_lod):
+            for epoch in range(n_epochs_per_lod):
                 package.update({'Epoch': epoch + 1})
                 for _, data_dict in enumerate(data_loader):
                     current_step += 1
+
+                    level_in += 1 / nb_transition
+                    level_in = np.clip(level_in, level, level + 1.0)
 
                     if USE_CUDA:
                         device = torch.device('cuda', 0)
                         for k, v in data_dict.items():
                             data_dict.update({k: v.to(device)})
 
-                    package.update(criterion(A, G, data_dict, lod))
+                    package.update(criterion(A, G, data_dict, level))
                     A_optim.zero_grad()
                     package['A_loss'].backward()
                     A_optim.step()
@@ -77,7 +84,7 @@ if __name__ == '__main__':
                     package['G_loss'].backward()
                     G_optim.step()
 
-                    package.update({'Level': lod, 'Current_step': current_step})
+                    package.update({'Level': level, 'Current_step': current_step})
 
                     manager(package)
 

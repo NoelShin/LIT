@@ -7,7 +7,7 @@ class BaseOption(object):
         self.parser = argparse.ArgumentParser()
 
         self.parser.add_argument('--debug', action='store_true', default=False, help='for checking code')
-        self.parser.add_argument('--gpu_ids', type=int, default=3, help='gpu number. If -1, use cpu')
+        self.parser.add_argument('--gpu_ids', type=int, default=2, help='gpu number. If -1, use cpu')
 
         self.parser.add_argument('--batch_size', type=int, default=1, help='the number of batch_size')
         self.parser.add_argument('--dataset_name', type=str, default='Cityscapes', help='[Cityscapes, Custom]')
@@ -16,8 +16,6 @@ class BaseOption(object):
         self.parser.add_argument('--image_mode', type=str, default='png', help='extension for saving image')
         self.parser.add_argument('--negative_slope', type=float, default=0.2, help='inclination for negative part')
         self.parser.add_argument('--max_ch', type=int, default=2 ** 10, help='max_nb of channels in model')
-        self.parser.add_argument('--n_downsample', type=int, default=4,
-                                 help='how many times you want downsample the original data')
 
         # about RCAN
         self.parser.add_argument('--n_RCAB', type=int, default=1,
@@ -36,14 +34,14 @@ class BaseOption(object):
         self.parser.add_argument('--n_RB', type=int, default=9, help='the number of residual blocks')
 
         # about architecture
-        self.parser.add_argument('--progression', action='store_true', default=False,
+        self.parser.add_argument('--progression', action='store_true', default=True,
                                  help='if you want progressive training')
         self.parser.add_argument('--trans_network', type=str, default='RDN',
                                  help='Network you want to use for image translation. "RN" for residual network, "RDN" for Residual dense network, "RCAN" for residual channel attention network')
         self.parser.add_argument('--U_net', action='store_true', default=True,
                                  help='if you want to use U-net skip connection')
         self.parser.add_argument('--U_net_gate', action='store_true', default=True, help='if you want gating for U-net')
-        self.parser.add_argument('--n_enhance_blocks', type=int, default=1,
+        self.parser.add_argument('--n_enhance_blocks', type=int, default=2,
                                  help='the number of enhancement blocks per level in decoder')
 
         self.parser.add_argument('--n_workers', type=int, default=2, help='how many threads you want to use')
@@ -86,7 +84,7 @@ class TrainOption(BaseOption):
                                  help='Init type. Choose among [kaiming_normal, normal]')
         self.parser.add_argument('--lr', type=float, default=0.0002)
         self.parser.add_argument('--n_epochs', type=int, default=100)
-        self.parser.add_argument('--n_epochs_per_lod', type=int, default=50)
+        self.parser.add_argument('--n_epochs_per_lod', type=int, default=80)
         self.parser.add_argument('--norm_type', type=str, default='InstanceNorm2d',
                                  help='[BatchNorm2d, InstanceNorm2d, PixelNorm]')
         self.parser.add_argument('--report_freq', type=int, default=5)

@@ -277,9 +277,9 @@ class ProgressiveGenerator(BaseGenerator):
         return x
 
 
-class ProgressiveUNetGenerator(BaseGenerator):
+class ProgressiveGatedUNetGenerator(BaseGenerator):
     def __init__(self, opt):
-        super(ProgressiveUNetGenerator, self).__init__()
+        super(ProgressiveGatedUNetGenerator, self).__init__()
         act = self.get_act_layer(opt.G_act, inplace=True)
         norm = self.get_norm_layer(opt.norm_type)
         pad = self.get_pad_layer(opt.pad_type)
@@ -290,22 +290,20 @@ class ProgressiveUNetGenerator(BaseGenerator):
         layer_first += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
         self.layer_first = nn.Sequential(*layer_first)
 
-        RGB_layer = [[pad(1), nn.Conv2d(n_ch, opt.output_ch, kernel_size=3, padding=0, stride=1)]]
-        RGB_layer[-1].append(nn.Tanh()) if opt.tanh else None
-
+        RGB_layer = []
         gate_layer = [[ChannelAttentionLayer(n_ch)]]
         for i in range(n_downsample):
             encoder_layer = [pad(1), nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=0, stride=2)]
             encoder_layer += self.add_norm_act_layer(norm, n_ch=2 * n_ch, act=act)
             gate_layer += [[ChannelAttentionLayer(2 * n_ch)]] if i != n_downsample - 1 else []
 
-            RGB_layer += [[pad(1), nn.Conv2d(2 * n_ch, opt.output_ch, kernel_size=3, padding=0, stride=1)]]
-            RGB_layer[-1].append(nn.Tanh()) if opt.tanh else None
-
             decoder_layer = [nn.ConvTranspose2d(2 * n_ch, n_ch, kernel_size=3, padding=1, stride=2, output_padding=1)]
             decoder_layer += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
 
-            enhance_layer = ResidualNetwork(1, n_ch, act, norm, pad)
+            enhance_layer = [ResidualNetwork(opt.n_enhance_blocks, n_ch, act, norm, pad)]
+
+            RGB_layer += [[pad(1), nn.Conv2d(n_ch, opt.output_ch, kernel_size=3, padding=0, stride=1)]]
+            RGB_layer[-1].append(nn.Tanh()) if opt.tanh else None
 
             n_ch *= 2
 
@@ -313,9 +311,12 @@ class ProgressiveUNetGenerator(BaseGenerator):
             setattr(self, 'Up_layer_{}'.format(i), nn.Sequential(*decoder_layer))
             setattr(self, 'Enhance_layer_{}'.format(i), nn.Sequential(*enhance_layer))
 
+        RGB_layer += [[pad(1), nn.Conv2d(n_ch, opt.output_ch, kernel_size=3, padding=0, stride=1)]]
+        RGB_layer[-1].append(nn.Tanh()) if opt.tanh else None
+
         n_RGB = len(RGB_layer)
         for i in range(n_RGB): # 0 1 2 3 4
-            setattr(self, 'RGB_layer_{}'.format(n_RGB - 1 - i), nn.Sequential(*RGB_layer[i]))
+            setattr(self, 'RGB_layer_{}'.format(i), nn.Sequential(*RGB_layer[i]))
 
         n_gate = len(gate_layer)
         for i in range(n_gate):
@@ -338,13 +339,13 @@ class ProgressiveUNetGenerator(BaseGenerator):
             results.append(getattr(self, 'Down_layer_{}'.format(i))(results[-1]))
 
         x = self.translator(results[-1])
-        out = getattr(self, 'RGB_layer_{}'.format(self.n_RGB))(x)
+        out = getattr(self, 'RGB_layer_{}'.format(self.n_RGB - 1))(x)
 
         for i in range(level):
-            x = getattr(self, 'Gate_layer_{}'.format(self.n_gate - i))(results[self.n_downsample - 1 - i])\
+            x = getattr(self, 'Gate_layer_{}'.format(self.n_gate - 1 - i))(results[self.n_downsample - 1 - i])\
                 + getattr(self, 'Up_layer_{}'.format(self.n_downsample - 1 - i))(x)
             x = getattr(self, 'Enhance_layer_{}'.format(self.n_downsample - 1 - i))(x)
-            y = getattr(self, 'RGB_layer_{}'.format(self.n_RGB - 1 - i))(x)
+            y = getattr(self, 'RGB_layer_{}'.format(self.n_RGB - 2 - i))(x)
             out = nn.functional.interpolate(out, scale_factor=2, mode='nearest')
             out = torch.lerp(out, y, level_in - level)
 

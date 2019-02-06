@@ -105,13 +105,13 @@ class LSGANLoss(Loss):
 
         return grid
 
-    def __call__(self, C, G, data_dict, lod=None):
+    def __call__(self, C, G, data_dict, level=None, level_in=None):
         loss_C = 0
         loss_G = 0
         package = {}
 
         input = data_dict['input_tensor']
-        fake = G(input, lod) if self.progression else G(input)
+        fake = G(input, level, level_in) if self.progression else G(input)
         target = data_dict['target_tensor']
 
         if self.condition:

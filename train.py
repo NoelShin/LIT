@@ -16,7 +16,7 @@ if __name__ == '__main__':
     if opt.progression:
         if opt.U_net:
             if opt.U_net_gate:
-                from models import ProgressiveGatedUNetGenerater as Generator
+                from models import ProgressiveGatedUNetGenerator as Generator
             else:
                 from models import ProgressiveUNetGenerator as Generator
         else:
@@ -57,7 +57,7 @@ if __name__ == '__main__':
     if opt.progression:
         for level in range(opt.n_downsample + 1):  # 0 1 2 3 4
             level_in = level
-            dataset = CustomDataset(opt, lod=level)
+            dataset = CustomDataset(opt, level=level)
             data_loader = torch.utils.data.DataLoader(dataset=dataset,
                                                       batch_size=opt.batch_size,
                                                       num_workers=opt.n_workers,
@@ -75,7 +75,7 @@ if __name__ == '__main__':
                         for k, v in data_dict.items():
                             data_dict.update({k: v.to(device)})
 
-                    package.update(criterion(A, G, data_dict, level))
+                    package.update(criterion(A, G, data_dict, level=level, level_in=level_in))
                     A_optim.zero_grad()
                     package['A_loss'].backward()
                     A_optim.step()
@@ -90,6 +90,7 @@ if __name__ == '__main__':
 
                     if opt.debug:
                         break
+
                 if opt.debug:
                     break
 

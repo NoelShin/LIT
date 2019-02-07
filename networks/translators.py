@@ -41,7 +41,6 @@ class ResidualDenseNetwork(BaseNetwork):
 
         self.GFF = nn.Sequential(*GFF)
         self.n_blocks = n_blocks
-        self.CA = ChannelAttentionLayer(n_ch)
 
     def forward(self, x):
         results = [x]
@@ -49,9 +48,9 @@ class ResidualDenseNetwork(BaseNetwork):
             results.append(getattr(self, 'ResidualDenseBlock_{}'.format(i))(results[-1]))
         cat = torch.cat(results[1:], dim=1)
         y = self.GFF(cat)
-        x = self.CA(x) + y
+        # x = x + y
 
-        return x
+        return y
 
 
 class ResidualNetwork(BaseNetwork):

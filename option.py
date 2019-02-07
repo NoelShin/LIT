@@ -26,7 +26,7 @@ class BaseOption(object):
 
         # about RDN
         self.parser.add_argument('--growth_rate', type=int, default=512)
-        self.parser.add_argument('--n_dense_layers', type=int, default=4, help='how many dense layers in a RDB')
+        self.parser.add_argument('--n_dense_layers', type=int, default=8, help='how many dense layers in a RDB')
         self.parser.add_argument('--n_RDB', type=int, default=4, help='the number of residual dense blocks')
         self.parser.add_argument('--RDB_ch', type=int, default=1024, help='the number of ch RDN started with')
 

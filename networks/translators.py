@@ -25,7 +25,8 @@ class ResidualChannelAttentionNetwork(BaseNetwork):
         self.network = nn.Sequential(*network)
 
     def forward(self, x):
-        return x + self.network(x)
+        # return x + self.network(x)
+        return self.network(x)
 
 
 class ResidualDenseNetwork(BaseNetwork):

@@ -63,15 +63,66 @@ def configure(opt):
     dataset_name = opt.dataset_name
 
     if opt.trans_network == 'RCAN':
-        model_name = model_namer(opt.trans_network, opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
-                                 progression=opt.progression, u_net=opt.U_net)
+        if opt.progression:
+            if opt.U_net:
+                if opt.U_net_gate:
+                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
+                                             progression=opt.progression, u_net=opt.U_net, gate=opt.U_net_gate)
+                else:
+                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
+                                             progression=opt.progression, u_net=opt.U_net)
+            else:
+                model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB, progression=opt.progression)
+        else:
+            if opt.U_net:
+                if opt.U_net_gate:
+                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
+                                             u_net=opt.U_net, gate=opt.U_net_gate)
+                else:
+                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
+                                             u_net=opt.U_net)
+            else:
+                model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB)
 
     elif opt.trans_network == 'RDN':
-        model_name = model_namer('CA_', opt.trans_network, n_l=opt.n_dense_layers, RDB=opt.n_RDB,
-                                 growth_rate=opt.growth_rate, u_net=opt.U_net, gate=opt.U_net_gate)
+        if opt.progression:
+            if opt.U_net:
+                if opt.U_net_gate:
+                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB,
+                                             progression=opt.progression, u_net=opt.U_net, gate=opt.U_net_gate)
+                else:
+                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB,
+                                             progression=opt.progression, u_net=opt.U_net)
+            else:
+                model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB,
+                                         progression=opt.progression)
+        else:
+            if opt.U_net:
+                if opt.U_net_gate:
+                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB,
+                                             u_net=opt.U_net, gate=opt.U_net_gate)
+                else:
+                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB, u_net=opt.U_net)
+            else:
+                model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB)
 
     elif opt.trans_network == 'RN':
-        model_name = model_namer(opt.trans_network, progression=opt.progression, u_net=opt.U_net)
+        if opt.progression:
+            if opt.U_net:
+                if opt.U_net_gate:
+                    model_name = model_namer(progression=opt.progression, u_net=opt.U_net, u_net_gate=opt.U_net_gate)
+                else:
+                    model_name = model_namer(progression=opt.progression, u_net=opt.U_net)
+            else:
+                model_name = model_namer(progression=opt.progression)
+        else:
+            if opt.U_net:
+                if opt.U_net_gate:
+                    model_name = model_namer(u_net=opt.U_net, u_net_gate=opt.U_net_gate)
+                else:
+                    model_name = model_namer(u_net=opt.U_net)
+            else:
+                model_name = model_namer()
 
     make_dir(dataset_name, model_name, type='checkpoints')
 

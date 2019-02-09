@@ -3,7 +3,6 @@ if __name__ == '__main__':
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import torch
     import numpy as np
-    from models import Critic as Adversarial
     from option import TrainOption
     from pipeline import CustomDataset
     from utils import Manager, update_lr
@@ -21,6 +20,8 @@ if __name__ == '__main__':
                 from models import ProgressiveUNetGenerator as Generator
         else:
             from models import ProgressiveGenerator as Generator
+            from models import ProgressiveResidualPatchCritic as Adversarial
+
     else:
         if opt.U_net:
             if opt.U_net_gate:
@@ -30,6 +31,10 @@ if __name__ == '__main__':
                 from models import UNetGenerator as Generator
         else:
             from models import Generator
+            if opt.Res_C:
+                from models import ResidualPatchCritic as Adversarial
+            else:
+                from models import Critic as Adversarial
 
     if opt.GAN_type == 'LSGAN':
         from loss import LSGANLoss as Loss

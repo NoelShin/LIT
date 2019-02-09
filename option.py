@@ -7,7 +7,7 @@ class BaseOption(object):
         self.parser = argparse.ArgumentParser()
 
         self.parser.add_argument('--debug', action='store_true', default=False, help='for checking code')
-        self.parser.add_argument('--gpu_ids', type=int, default=2, help='gpu number. If -1, use cpu')
+        self.parser.add_argument('--gpu_ids', type=int, default=3, help='gpu number. If -1, use cpu')
 
         self.parser.add_argument('--batch_size', type=int, default=1, help='the number of batch_size')
         self.parser.add_argument('--dataset_name', type=str, default='Cityscapes', help='[Cityscapes, Custom]')
@@ -15,7 +15,8 @@ class BaseOption(object):
         self.parser.add_argument('--image_height', type=int, default=512, help='[512, 1024]')
         self.parser.add_argument('--image_mode', type=str, default='png', help='extension for saving image')
         self.parser.add_argument('--negative_slope', type=float, default=0.2, help='inclination for negative part')
-        self.parser.add_argument('--max_ch', type=int, default=2 ** 10, help='max_nb of channels in model')
+        self.parser.add_argument('--max_ch_G', type=int, default=2 ** 10, help='max nb of channels in generator')
+        self.parser.add_argument('--max_ch_C', type=int, default=2 ** 9, help='max nb of channels in critic')
 
         # about RCAN
         self.parser.add_argument('--n_RCAB', type=int, default=1,
@@ -35,22 +36,22 @@ class BaseOption(object):
 
         # about architecture
         self.parser.add_argument('--pre_activation', action='store_true', default=True)
-        self.parser.add_argument('--progression', action='store_true', default=True,
+        self.parser.add_argument('--Res_C', action='store_true', default=True)
+        self.parser.add_argument('--progression', action='store_true', default=False,
                                  help='if you want progressive training')
-        self.parser.add_argument('--trans_network', type=str, default='RDN',
+        self.parser.add_argument('--trans_network', type=str, default='RN',
                                  help='Network you want to use for image translation. "RN" for residual network, "RDN" for Residual dense network, "RCAN" for residual channel attention network')
-        self.parser.add_argument('--U_net', action='store_true', default=True,
+        self.parser.add_argument('--U_net', action='store_true', default=False,
                                  help='if you want to use U-net skip connection')
-        self.parser.add_argument('--U_net_gate', action='store_true', default=True, help='if you want gating for U-net')
+        self.parser.add_argument('--U_net_gate', action='store_true', default=False, help='if you want gating for U-net')
         self.parser.add_argument('--n_downsample_C', type=int, default=4)
         self.parser.add_argument('--n_enhance_blocks', type=int, default=2,
                                  help='the number of enhancement blocks per level in decoder')
-
-        self.parser.add_argument('--max_ch', type=int, default=1024)
+        self.parser.add_argument('--n_RB_C', type=int, default=2)
 
         self.parser.add_argument('--n_workers', type=int, default=2, help='how many threads you want to use')
         self.parser.add_argument('--pad_type', type=str, default='reflection', help='[reflection, replication, zero]')
-        self.parser.add_argument('--pad_tyoe_C', type=str, default='zero')
+        self.parser.add_argument('--pad_type_C', type=str, default='zero')
         self.parser.add_argument('--use_boundary_map', action='store_true', default=True,
                                  help='if you want to use boundary map')
 
@@ -96,7 +97,7 @@ class TrainOption(BaseOption):
         self.parser.add_argument('--save_freq', type=int, default=29750)
         self.parser.add_argument('--shuffle', action='store_true', default=True,
                                  help='if you want to shuffle the order')
-        self.parser.add_argument('--tanh', action='store_true', default=True, help='if you want to use tanh for RGB')
+        self.parser.add_argument('--tanh', action='store_true', default=False, help='if you want to use tanh for RGB')
         self.parser.add_argument('--VGG', action='store_true', default=True, help='if you want to add a VGG loss')
         self.parser.add_argument('--VGG_lambda', type=int, default=10, help='weight for VGG loss')
 

@@ -3,12 +3,19 @@ from .base_module import BaseModule
 
 
 class ResidualBlock(BaseModule):
-    def __init__(self, n_ch, act, norm, pad, kernel_size=3):
+    def __init__(self, n_ch, act, norm, pad, kernel_size=3, pre_activation=False):
         super(ResidualBlock, self).__init__()
-        block = [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1)]
-        block += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
-        block += [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1)]
-        block += self.add_norm_act_layer(norm, n_ch=n_ch)
+        if pre_activation:
+            block = self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
+            block += [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1)]
+            block += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
+            block += [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1)]
+
+        else:
+            block = [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1)]
+            block += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
+            block += [pad(1), nn.Conv2d(n_ch, n_ch, kernel_size=kernel_size, padding=0, stride=1)]
+            block += self.add_norm_act_layer(norm, n_ch=n_ch)
 
         self.block = nn.Sequential(*block)
 

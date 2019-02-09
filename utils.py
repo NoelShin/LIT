@@ -122,7 +122,10 @@ def configure(opt):
                 else:
                     model_name = model_namer(u_net=opt.U_net)
             else:
-                model_name = model_namer()
+                if opt.Res_C:
+                    model_name = model_namer(n_RB_C=opt.n_RB_C, max_ch=opt.max_ch_C)
+                else:
+                    model_name = model_namer('vanilla')
 
     make_dir(dataset_name, model_name, type='checkpoints')
 

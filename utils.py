@@ -54,7 +54,7 @@ def configure(opt):
 
     else:
         opt.beta1, opt.beta2 = (0.5, 0.9)
-        opt.n_C = 2
+        opt.n_C = 1
         opt.patch_size = 70
 
     opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.n_downsample),
@@ -123,7 +123,7 @@ def configure(opt):
                     model_name = model_namer(u_net=opt.U_net)
             else:
                 if opt.Res_C:
-                    model_name = model_namer(n_RB_C=opt.n_RB_C, max_ch=opt.max_ch_C)
+                    model_name = model_namer(n_RB_C=opt.n_RB_C, max_ch=opt.max_ch_C, down=opt.n_downsample_C, eq=opt.equal_FM_weights)
                 else:
                     model_name = model_namer('vanilla')
 

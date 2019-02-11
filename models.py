@@ -123,14 +123,12 @@ class Generator(BaseGenerator):
         res_blocks = []
         up_blocks = []
         if pre_activation:
-            # down_blocks += self.add_norm_act_layer(norm, n_ch=input_ch, act=act)
             down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7, padding=0, stride=1)]
             for _ in range(n_down):
                 down_blocks += self.add_norm_act_layer(norm, n_ch=min(n_ch, max_ch), act=act)
                 down_blocks += [pad(1), nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=0,
                                                   stride=2)]
                 n_ch *= 2
-
             for _ in range(n_RB):
                 res_blocks += [ResidualBlock(min(n_ch, max_ch), act, norm, pad, pre_activation=True)]
 
@@ -139,7 +137,7 @@ class Generator(BaseGenerator):
                 up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch//2, max_ch), kernel_size=3, padding=1,
                                                  stride=2, output_padding=1)]
                 n_ch //= 2
-
+            up_blocks += [norm(n_ch), act]
             up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7, padding=0, stride=1)]
 
         else:
@@ -184,21 +182,25 @@ class ProgressiveGenerator(Generator):
         super(ProgressiveGenerator, self).__init__(opt)
         act = self.get_act_layer(opt.G_act, inplace=True)
         norm = self.get_norm_layer(opt.norm_type)
+        pad = self.get_pad_layer(opt.pad_type)
+
         max_ch = opt.max_ch_G
         n_down = opt.n_downsample
         output_ch = opt.output_ch
         pre_activation = opt.pre_activation
 
         n_ch = opt.n_gf * 2 ** n_down
-        del self.up_blocks
-        rgb_blocks = [[nn.Conv2d(min(n_ch, max_ch), output_ch, kernel_size=3, padding=0, stride=1)]]
+        rgb_blocks = [[norm(min(n_ch, max_ch)), act, pad(1),
+                       nn.Conv2d(min(n_ch, max_ch), output_ch, kernel_size=3, padding=0, stride=1)]]
         rgb_blocks[-1].append(nn.Tanh()) if opt.tanh else None
+        delattr(self, 'up_blocks')
         if pre_activation:
             for i in range(n_down):
                 up_block = self.add_norm_act_layer(norm, n_ch=min(n_ch, max_ch), act=act)
                 up_block += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
                                                 stride=2, output_padding=1)]
-                rgb_blocks += [[nn.Conv2d(min(n_ch // 2, max_ch), output_ch, kernel_size=3, padding=0, stride=1)]]
+                rgb_blocks += [[norm(min(n_ch // 2, max_ch)), act, pad(1),
+                                nn.Conv2d(min(n_ch // 2, max_ch), output_ch, kernel_size=3, padding=0, stride=1)]]
                 rgb_blocks[-1].append(nn.Tanh()) if opt.tanh else None
                 setattr(self, 'Up_block_{}'.format(i), nn.Sequential(*up_block))
                 n_ch //= 2
@@ -215,6 +217,14 @@ class ProgressiveGenerator(Generator):
 
         for i in range(len(rgb_blocks)):
             setattr(self, 'RGB_block_{}'.format(i), nn.Sequential(*rgb_blocks[i]))
+
+        self.apply(partial(self.init_weights, type=opt.init_type, mode=opt.fan_mode, negative_slope=opt.negative_slope,
+                           nonlinearity=opt.G_act))
+
+        self.to_CUDA(opt.gpu_ids)
+
+        print(self)
+        print("the number of G parameters: ", sum(p.numel() for p in self.parameters() if p.requires_grad))
 
     def forward(self, x, level, level_in):
         x = self.res_blocks(self.down_blocks(x))
@@ -296,40 +306,45 @@ class ResidualPatchCritic(BaseNetwork):
         input_ch = opt.input_ch + opt.output_ch if opt.C_condition else opt.output_ch
         max_ch = opt.max_ch_C
         n_ch = opt.n_df
-        n_down = opt.n_downsample_C
+        n_down = opt.n_downsample if opt.progression else opt.n_downsample_C
         n_RB_C = opt.n_RB_C
         pre_activation = opt.pre_activation
 
         down_blocks = []
         res_blocks = []
         if pre_activation:
-            in_conv = [nn.Conv2d(input_ch, n_ch, kernel_size=3, padding=1, stride=1)]
-            in_conv += [act, nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=1, stride=2)]
-            for _ in range(n_down - 1):
-                n_ch *= 2
+            in_conv = [[nn.Conv2d(input_ch, n_ch, kernel_size=3, padding=1, stride=2)]]
+            in_conv += [[act, nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=1, stride=2)]]
+            n_ch *= 2
+            for _ in range(n_down - len(in_conv)):
                 down_blocks += [[norm(min(n_ch, max_ch)), act, nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch),
                                                                          kernel_size=3, padding=1, stride=2)]]
+                n_ch *= 2
 
             for _ in range(n_RB_C):
-                res_blocks += [[ResidualBlock(min(2 * n_ch, max_ch), act, norm, pad, pre_activation=True)]]
+                res_blocks += [[ResidualBlock(min(n_ch, max_ch), act, norm, pad, pre_activation=True)]]
 
-            self.out_conv = nn.Conv2d(min(2 * n_ch, max_ch), 1, kernel_size=3, padding=1, stride=1)
+            out_conv = [norm(min(n_ch, max_ch)), act, nn.Conv2d(min(n_ch, max_ch), 1, kernel_size=3, padding=1,
+                                                                stride=1)]
+            self.out_conv = nn.Sequential(*out_conv)
 
         else:
-            in_conv = [nn.Conv2d(input_ch, n_ch, kernel_size=3, padding=1, stride=1), act]
-            for _ in range(n_down):
+            in_conv = [[nn.Conv2d(input_ch, n_ch, kernel_size=3, padding=1, stride=2), act]]
+            for _ in range(n_down - len(in_conv)):
                 down_blocks += [[nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=1, stride=2),
-                            norm(min(2 * n_ch, max_ch)), act]]
+                                 norm(min(2 * n_ch, max_ch)), act]]
                 n_ch *= 2
 
             for _ in range(n_RB_C):
                 res_blocks += [[ResidualBlock(min(n_ch, max_ch), act, norm, pad, pre_activation=False)]]
             self.out_conv = nn.Conv2d(min(n_ch, max_ch), 1, kernel_size=3, padding=1, stride=1)
 
-        self.in_conv = nn.Sequential(*in_conv)
-
+        self.n_in_conv = len(in_conv)
         self.n_down_blocks = len(down_blocks)
         self.n_res_blocks = len(res_blocks)
+
+        for i in range(self.n_in_conv):
+            setattr(self, 'In_conv_{}'.format(i), nn.Sequential(*in_conv[i]))
 
         for i in range(self.n_down_blocks):
             setattr(self, 'Down_block_{}'.format(i), nn.Sequential(*down_blocks[i]))
@@ -346,42 +361,74 @@ class ResidualPatchCritic(BaseNetwork):
         print("the number of C parameters: ", sum(p.numel() for p in self.parameters() if p.requires_grad))
 
     def forward(self, x):
-        results = [self.in_conv(x)]
+        results = [x]
+        for i in range(self.n_in_conv):
+            results += [getattr(self, 'In_conv_{}'.format(i))(results[-1])]
         for i in range(self.n_down_blocks):
             results += [getattr(self, 'Down_block_{}'.format(i))(results[-1])]
-
         for i in range(self.n_res_blocks):
             results += [getattr(self, 'Residual_block_{}'.format(i))(results[-1])]
 
         results += [self.out_conv(results[-1])]
 
-        return results
+        return [results[1:]]
 
 
-class ProgressiveResidualPatchCritic(ResidualPatchCritic):
+class ProgressiveResidualPatchCritic(BaseNetwork):
     def __init__(self, opt):
-        super(ProgressiveResidualPatchCritic, self).__init__(opt)
+        super(ProgressiveResidualPatchCritic, self).__init__()
         act = self.get_act_layer(opt.C_act, inplace=True, negative_slope=opt.C_act_negative_slope)
+        norm = self.get_norm_layer(opt.norm_type)
+        pad = self.get_pad_layer(opt.pad_type_C)
 
         input_ch = opt.input_ch + opt.output_ch if opt.C_condition else opt.output_ch
+        max_ch = opt.max_ch_C
         n_ch = opt.n_df
-        n_down = opt.n_downsample_C
+        n_down = opt.n_downsample
+        n_RB_C = opt.n_RB_C
         pre_activation = opt.pre_activation
 
-        del self.in_conv
         n_in_conv = n_down + 1
         if pre_activation:
-            for i in range(n_in_conv):
+            for i in range(n_in_conv):  # 0, 1, 2, 3, 4
                 in_conv = [nn.Conv2d(input_ch, n_ch, kernel_size=3, padding=1, stride=1)]
-                setattr(self, 'in_conv_{}'.format(i), nn.Sequential(*in_conv))
+                setattr(self, 'In_conv_{}'.format(i), nn.Sequential(*in_conv))
                 n_ch *= 2
+
+            n_ch = opt.n_df
+            for i in range(n_down):
+                down_block = [act, nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=1, stride=2)]
+                setattr(self, 'Down_block_{}'.format(i), nn.Sequential(*down_block))
+                n_ch *= 2
+
+            for i in range(n_RB_C):
+                setattr(self, 'Residual_block_{}'.format(i), ResidualBlock(n_ch, act, norm, pad, pre_activation=True))
+
+            out_conv = [norm(min(n_ch, max_ch)), act, nn.Conv2d(min(n_ch, max_ch), 1, kernel_size=3, padding=1,
+                                                                stride=1)]
+            self.out_conv = nn.Sequential(*out_conv)
 
         else:
             for i in range(n_in_conv):
                 in_conv = [nn.Conv2d(input_ch, n_ch, kernel_size=3, padding=1, stride=1), act]
-                setattr(self, 'in_conv_{}'.format(i), nn.Sequential(*in_conv))
+                setattr(self, 'In_conv_{}'.format(i), nn.Sequential(*in_conv))
+                n_ch *= 2
 
+            n_ch = opt.n_df
+            for i in range(n_down):
+                down_block = [nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, stride=2, padding=1), norm(2 * n_ch), act]
+                setattr(self, 'Down_block_{}'.format(i), nn.Sequential(*down_block))
+                n_ch *= 2
+
+            for i in range(n_RB_C):
+                setattr(self, 'Residual_block_{}'.format(i), ResidualBlock(n_ch, act, norm, pad, pre_activation=False))
+            self.out_conv = nn.Conv2d(n_ch, 1, kernel_size=3, stride=1, padding=1)
+
+        self.n_df = opt.n_df
+        self.n_down = n_down
         self.n_in_conv = n_in_conv
+        self.n_res_blocks = n_RB_C
+        self.norm = norm
 
         self.apply(partial(self.init_weights, type=opt.init_type, mode=opt.fan_mode, negative_slope=opt.negative_slope,
                            nonlinearity=opt.C_act))
@@ -393,78 +440,21 @@ class ProgressiveResidualPatchCritic(ResidualPatchCritic):
 
     def forward(self, tensor, level, level_in):
         results = []
-        x = getattr(self, 'in_conv_{}'.format(self.n_in_conv - 1 - level))(tensor)
-        for i in range(level): # 0 1 2 3 4
+        x = getattr(self, 'In_conv_{}'.format(self.n_in_conv - 1 - level))(tensor)
+        for i in range(level, 0, -1):  # 4 3 2 1
             tensor = nn.AvgPool2d(kernel_size=2, stride=2)(tensor)
-            y = getattr(self, 'in_conv_{}'.format(self.n_in_conv - 1 - i))(tensor)
-            x = getattr(self, 'Down_block_{}'.format(self.n_down_blocks - 1 - i))(x)
+            y = getattr(self, 'In_conv_{}'.format(self.n_in_conv - i))(tensor)
+            x = getattr(self, 'Down_block_{}'.format(self.n_down - i))(x)
             x = torch.lerp(y, x, level_in - level)
             results += [x]
+            x = self.norm(self.n_df * 2 ** (self.n_down + 1 - i))(x) if i != 1 else x
 
         for i in range(self.n_res_blocks):
-            results += [getattr(self, 'Residual_block{}'.format(i))(results[-1])]
+            results += [getattr(self, 'Residual_block_{}'.format(i))(x)]
 
         results += [self.out_conv(results[-1])]
 
-        return results
-
-
-class ProgressiveGenerator(BaseGenerator):
-    def __init__(self, opt):
-        super(ProgressiveGenerator, self).__init__()
-        act = self.get_act_layer(opt.G_act, inplace=True)
-        norm = self.get_norm_layer(opt.norm_type)
-        pad = self.get_pad_layer(opt.pad_type)
-
-        n_ch = opt.n_gf
-        n_downsample = opt.n_downsample
-        layer_first = [pad(1), nn.Conv2d(opt.input_ch, n_ch, kernel_size=3, padding=0, stride=1)]
-        self.layer_first = nn.Sequential(*layer_first)
-
-        RGB_layer = [[pad(1), nn.Conv2d(n_ch, opt.output_ch, kernel_size=3, padding=0, stride=1)]]
-        RGB_layer[-1].append(nn.Tanh()) if opt.tanh else None
-
-        for i in range(n_downsample):
-            encoder_layer = self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
-            encoder_layer += [pad(1), nn.Conv2d(n_ch, 2 * n_ch, kernel_size=3, padding=0, stride=2)]
-            encoder_layer += self.add_norm_act_layer(norm, n_ch=2 * n_ch, act=act) if i == n_downsample - 1 else []
-
-            RGB_layer += [[pad(1), nn.Conv2d(2 * n_ch, opt.output_ch, kernel_size=3, padding=0, stride=1)]]
-            RGB_layer[-1].append(nn.Tanh()) if opt.tanh else None
-
-            decoder_layer = [nn.ConvTranspose2d(2 * n_ch, n_ch, kernel_size=3, padding=1, stride=2, output_padding=1)]
-            decoder_layer += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
-
-            n_ch *= 2
-
-            setattr(self, 'Down_layer_{}'.format(i), nn.Sequential(*encoder_layer))
-            setattr(self, 'Up_layer_{}'.format(i), nn.Sequential(*decoder_layer))
-
-        n_RGB = len(RGB_layer)
-        for i in range(n_RGB):  # 0 1 2 3 4
-            setattr(self, 'RGB_layer_{}'.format(n_RGB - 1 - i), nn.Sequential(*RGB_layer[i]))
-
-        self.translator = self.get_trans_network(opt, act, norm, pad, input_ch=n_ch)
-        self.n_downsample = opt.n_downsample
-
-        self.apply(partial(self.init_weights, type=opt.init_type, mode=opt.fan_mode, negative_slope=opt.negative_slope,
-                           nonlinearity=opt.G_act))
-        self.to_CUDA(opt.gpu_ids)
-
-        print(self)
-        print("the number of G parameters: ", sum(p.numel() for p in self.parameters() if p.requires_grad))
-
-    def forward(self, x, level):
-        results = [self.layer_first(x)]
-        for i in range(self.n_downsample):
-            results.append(getattr(self, 'Down_layer_{}'.format(i))(results[-1]))
-
-        x = self.translator(results[-1])
-        for i in range(level):  # 0 1 2 3
-            x = getattr(self, 'Up_layer_{}'.format(self.n_downsample - 1 - i))(x)
-
-        x = getattr(self, 'RGB_layer_{}'.format(level))(x)
-        return x
+        return [results]
 
 
 class VGG19(nn.Module):

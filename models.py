@@ -53,26 +53,55 @@ class BaseGenerator(BaseNetwork):
         return enhance_layer
 
     @staticmethod
-    def get_trans_network(opt, act, norm, pad, kernel_size=3, input_ch=None):
+    def get_trans_module(opt, act, norm, pad, kernel_size=3, pre_activation=False):
+        trans_module = opt.trans_module
+        if trans_module == 'RB':
+            from networks.modules.residual_block import ResidualBlock
+            module = partial(ResidualBlock, act=act, norm=norm, pad=pad, kernel_size=kernel_size,
+                             pre_activation=pre_activation)
+
+        elif trans_module == 'RDB':
+            from networks.modules.residual_dense_block import ResidualDenseBlock
+            module = partial(ResidualDenseBlock, growth_rate=opt.growth_rate, n_dense_layers=opt.n_dense_layers,
+                             act=act, norm=norm, pad=pad, kernel_size=kernel_size, pre_activation=pre_activation,
+                             efficient=opt.efficient)
+
+        elif opt.trans_module == 'RCAN':
+            from networks.module.residual_channel_attention_block import ResidualChannelAttentionBlock
+            module = partial(ResidualChannelAttentionBlock, reduction_rate=opt.reduction_rate, act=act, norm=norm,
+                             pad=pad, kernel_size=kernel_size, pre_activation=pre_activation)
+
+        elif opt.trans_module == 'RCADB':
+            from networks.module.residual_dense_block import ResidualChannelAttentionDenseBlock
+            module = partial(ResidualChannelAttentionDenseBlock, growth_rate=opt.growth_rate,
+                             n_dense_layer=opt.n_dense_layers, act=act, norm=norm, pad=pad, kernel_size=kernel_size,
+                             pre_activation=pre_activation)
+
+        return module
+
+    @staticmethod
+    def get_trans_network(opt, act, norm, pad, kernel_size=3, pre_activation=False):
         if opt.trans_network == 'RCAN':
             from networks.translators import ResidualChannelAttentionNetwork
             net = ResidualChannelAttentionNetwork(opt.n_RG, opt.n_RCAB, opt.RCA_ch,
                                                   opt.reduction_rate, kernel_size=kernel_size, act=act, norm=norm,
-                                                  pad=pad, input_ch=input_ch)
+                                                  pad=pad, pre_activation=pre_activation)
 
         elif opt.trans_network == 'RN':
             from networks.translators import ResidualNetwork
             net = ResidualNetwork(opt.n_RB, opt.n_gf * 2 ** opt.n_downsample, kernel_size=kernel_size, act=act,
-                                  norm=norm, pad=pad)
+                                  norm=norm, pad=pad, pre_activation=pre_activation)
 
         elif opt.trans_network == 'RDN':
             from networks.translators import ResidualDenseNetwork
+            growth_rate = opt.growth_rate
             n_dense_layers = opt.n_dense_layers
             n_downsample = opt.n_downsample
             n_gf = opt.n_gf
             n_RDB = opt.n_RDB
-            net = ResidualDenseNetwork(n_RDB, n_gf * 2 ** n_downsample, n_gf * 2 ** n_downsample//n_dense_layers,
-                                       n_dense_layers, kernel_size=kernel_size, act=act, norm=norm, pad=pad)
+            net = ResidualDenseNetwork(n_RDB, n_gf * 2 ** n_downsample, growth_rate,
+                                       n_dense_layers, kernel_size=kernel_size, act=act, norm=norm, pad=pad,
+                                       pre_activation=pre_activation)
 
         else:
             raise NotImplementedError("Invalid translation unit {}. Please check trans_type option.".
@@ -118,9 +147,10 @@ class Generator(BaseGenerator):
         n_RB = opt.n_RB
         output_ch = opt.output_ch
         pre_activation = opt.pre_activation
+        trans_module = self.get_trans_module(opt, act, norm, pad, pre_activation=pre_activation)
 
         down_blocks = []
-        res_blocks = []
+        trans_blocks = []
         up_blocks = []
         if pre_activation:
             down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7, padding=0, stride=1)]
@@ -129,8 +159,8 @@ class Generator(BaseGenerator):
                 down_blocks += [pad(1), nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=0,
                                                   stride=2)]
                 n_ch *= 2
-            for _ in range(n_RB):
-                res_blocks += [ResidualBlock(min(n_ch, max_ch), act, norm, pad, pre_activation=True)]
+
+            trans_blocks += [trans_module(n_ch=min(n_ch, max_ch)) for _ in range(n_RB)]
 
             for _ in range(n_down):
                 up_blocks += self.add_norm_act_layer(norm, n_ch=min(n_ch, max_ch), act=act)
@@ -149,8 +179,7 @@ class Generator(BaseGenerator):
                 down_blocks += self.add_norm_act_layer(norm, n_ch=min(n_ch, max_ch), act=act)
                 n_ch *= 2
 
-            for _ in range(n_RB):
-                res_blocks += [ResidualBlock(min(n_ch, max_ch), act, norm, pad, pre_activation=False)]
+            trans_blocks += [trans_module(n_ch=min(n_ch, max_ch)) for _ in range(n_RB)]
 
             for _ in range(n_down):
                 up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
@@ -162,7 +191,7 @@ class Generator(BaseGenerator):
         up_blocks += [nn.Tanh()] if opt.tanh else []
 
         self.down_blocks = nn.Sequential(*down_blocks)
-        self.res_blocks = nn.Sequential(*res_blocks)
+        self.translator = nn.Sequential(*trans_blocks)
         self.up_blocks = nn.Sequential(*up_blocks)
 
         self.apply(partial(self.init_weights, type=opt.init_type, mode=opt.fan_mode, negative_slope=opt.negative_slope,
@@ -174,7 +203,7 @@ class Generator(BaseGenerator):
         print("the number of G parameters: ", sum(p.numel() for p in self.parameters() if p.requires_grad))
 
     def forward(self, x):
-        return self.up_blocks(self.res_blocks(self.down_blocks(x)))
+        return self.up_blocks(self.translator(self.down_blocks(x)))
 
 
 class ProgressiveGenerator(Generator):
@@ -227,7 +256,7 @@ class ProgressiveGenerator(Generator):
         print("the number of G parameters: ", sum(p.numel() for p in self.parameters() if p.requires_grad))
 
     def forward(self, x, level, level_in):
-        x = self.res_blocks(self.down_blocks(x))
+        x = self.translator(self.down_blocks(x))
         out = getattr(self, 'RGB_block_0')(x)
         for i in range(level):
             x = getattr(self, 'Up_block_{}'.format(i))(x)

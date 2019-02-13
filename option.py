@@ -7,7 +7,7 @@ class BaseOption(object):
         self.parser = argparse.ArgumentParser()
 
         self.parser.add_argument('--debug', action='store_true', default=False, help='for checking code')
-        self.parser.add_argument('--gpu_ids', type=int, default=1, help='gpu number. If -1, use cpu')
+        self.parser.add_argument('--gpu_ids', type=int, default=0, help='gpu number. If -1, use cpu')
 
         self.parser.add_argument('--batch_size', type=int, default=1, help='the number of batch_size')
         self.parser.add_argument('--dataset_name', type=str, default='Cityscapes', help='[Cityscapes, Custom]')
@@ -27,12 +27,12 @@ class BaseOption(object):
         self.parser.add_argument('--growth_rate', type=int, default=256)
         self.parser.add_argument('--n_dense_layers', type=int, default=4, help='how many dense layers in a RDB')
         # about RN
-        self.parser.add_argument('--n_RB', type=int, default=16, help='the number of residual blocks')
+        self.parser.add_argument('--n_RB', type=int, default=10, help='the number of residual blocks')
 
         # about architecture
         self.parser.add_argument('--equal_FM_weights', action='store_true', default=True)
         self.parser.add_argument('--FM_lambda', type=int, default=10, help='weight for feature matching loss')
-        self.parser.add_argument('--pre_activation', action='store_true', default=False)
+        self.parser.add_argument('--pre_activation', action='store_true', default=True)
         self.parser.add_argument('--Res_C', action='store_true', default=False)
         self.parser.add_argument('--progression', action='store_true', default=False,
                                  help='if you want progressive training')
@@ -84,7 +84,7 @@ class TrainOption(BaseOption):
         self.parser.add_argument('--init_type', type=str, default='normal',
                                  help='Init type. Choose among [kaiming_normal, normal]')
         self.parser.add_argument('--lr', type=float, default=0.0002)
-        self.parser.add_argument('--n_epochs', type=int, default=100)
+        self.parser.add_argument('--n_epochs', type=int, default=200)
         self.parser.add_argument('--n_epochs_per_lod', type=int, default=80)
         self.parser.add_argument('--norm_type', type=str, default='InstanceNorm2d',
                                  help='[BatchNorm2d, InstanceNorm2d, PixelNorm]')

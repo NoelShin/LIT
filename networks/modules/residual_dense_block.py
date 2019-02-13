@@ -14,7 +14,9 @@ class DenseLayer(BaseModule):
         pad = self.get_pad_layer(pad) if isinstance(pad, str) else pad
 
         if pre_activation:
-            layer = [norm(n_ch), act, pad(1), nn.Conv2d(n_ch, growth_rate, kernel_size=kernel_size, bias=False)]
+            layer = [act, pad(1), nn.Conv2d(n_ch, growth_rate, kernel_size=kernel_size, bias=False), norm(growth_rate),
+                     nn.LeakyReLU(1.0, True)]  # without activation at the last, it consumes more memory without reason.
+            # plz advice us if you have any idea about this phenomenon.
 
         else:
             layer = [pad(1), nn.Conv2d(n_ch, growth_rate, kernel_size=kernel_size, bias=False), norm(growth_rate), act]
@@ -42,7 +44,13 @@ class ResidualDenseBlock(BaseModule):
             self.add_module('Dense_layer_{}'.format(i), DenseLayer(n_ch, growth_rate, kernel_size, act, norm, pad,
                                                                    pre_activation=pre_activation, efficient=efficient))
             n_ch += growth_rate
-        self.add_module('LFF', nn.Conv2d(n_ch, init_ch, kernel_size=1, bias=False))  # local feature fusion
+
+        if pre_activation:
+            LFF = [act, nn.Conv2d(n_ch, init_ch, kernel_size=1, bias=False), norm(init_ch), nn.LeakyReLU(1.0, True)]
+        else:
+            LFF = [nn.Conv2d(n_ch, init_ch, kernel_size=1, bias=False), norm(init_ch), nn.LeakyReLU(1.0, True)]
+
+        self.add_module('LFF', nn.Sequential(*LFF))  # local feature fusion
 
         self.efficient = efficient
         self.n_dense_layers = n_dense_layers

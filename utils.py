@@ -54,7 +54,7 @@ def configure(opt):
 
     else:
         opt.beta1, opt.beta2 = (0.5, 0.9)
-        opt.n_C = 1
+        opt.n_C = 2
         opt.patch_size = 70
 
     opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.n_downsample),
@@ -62,51 +62,52 @@ def configure(opt):
 
     dataset_name = opt.dataset_name
 
-    if opt.trans_network == 'RCAN':
+    if opt.trans_module == 'RCAB':
         if opt.progression:
             if opt.U_net:
                 if opt.U_net_gate:
-                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
+                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RB,
                                              progression=opt.progression, u_net=opt.U_net, gate=opt.U_net_gate)
                 else:
-                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
-                                             progression=opt.progression, u_net=opt.U_net)
+                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB,
+                                             progression=opt.progression)
             else:
-                model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB, progression=opt.progression)
+                model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB, progression=opt.progression)
         else:
             if opt.U_net:
                 if opt.U_net_gate:
-                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
+                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB,
                                              u_net=opt.U_net, gate=opt.U_net_gate)
                 else:
-                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB,
+                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB,
                                              u_net=opt.U_net)
             else:
-                model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCAB)
+                model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB)
 
-    elif opt.trans_network == 'RDN':
+    elif opt.trans_module == 'RDB' or opt.trans_module == 'RCADB':
         if opt.progression:
             if opt.U_net:
                 if opt.U_net_gate:
-                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB,
-                                             progression=opt.progression, u_net=opt.U_net, gate=opt.U_net_gate)
+                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB,
+                                             progression=opt.progression, u_net=opt.U_net, gate=opt.U_net_gate,
+                                             k=opt.growth_rate)
                 else:
-                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB,
-                                             progression=opt.progression, u_net=opt.U_net)
+                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB,
+                                             progression=opt.progression, k=opt.growth_rate)
             else:
-                model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB,
-                                         progression=opt.progression)
+                model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB, k=opt.growth_rate,
+                                         rogression=opt.progression)
         else:
             if opt.U_net:
                 if opt.U_net_gate:
-                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB,
+                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB, k=opt.growth_rate,
                                              u_net=opt.U_net, gate=opt.U_net_gate)
                 else:
-                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB, u_net=opt.U_net)
+                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB, k=opt.growth_rate, u_net=opt.U_net)
             else:
-                model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RDB)
+                model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB, k=opt.growth_rate)
 
-    elif opt.trans_network == 'RN':
+    elif opt.trans_module == 'RB':
         if opt.progression:
             if opt.U_net:
                 if opt.U_net_gate:

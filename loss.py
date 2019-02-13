@@ -96,6 +96,7 @@ class LSGANLoss(Loss):
         self.condition = opt.C_condition
         self.gpu_id = opt.gpu_ids
         self.n_C = opt.n_C
+        self.n_down = opt.n_downsample_C
         self.progression = opt.progression
 
     def get_grid(self, tensor, is_real=True):

@@ -53,8 +53,9 @@ class BaseGenerator(BaseNetwork):
         return enhance_layer
 
     @staticmethod
-    def get_trans_module(opt, act, norm, pad, kernel_size=3, pre_activation=False):
+    def get_trans_module(opt, act, norm, pad, kernel_size=3):
         trans_module = opt.trans_module
+        pre_activation = opt.pre_activation
         if trans_module == 'RB':
             from networks.modules.residual_block import ResidualBlock
             module = partial(ResidualBlock, act=act, norm=norm, pad=pad, kernel_size=kernel_size,
@@ -147,44 +148,39 @@ class Generator(BaseGenerator):
         n_RB = opt.n_RB
         output_ch = opt.output_ch
         pre_activation = opt.pre_activation
-        trans_module = self.get_trans_module(opt, act, norm, pad, pre_activation=pre_activation)
+        trans_module = self.get_trans_module(opt, act, norm, pad)
 
         down_blocks = []
         trans_blocks = []
         up_blocks = []
         if pre_activation:
             down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7, padding=0, stride=1)]
-            for _ in range(n_down):
-                down_blocks += self.add_norm_act_layer(norm, n_ch=min(n_ch, max_ch), act=act)
-                down_blocks += [pad(1), nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=0,
-                                                  stride=2)]
+            for i in range(n_down):
+                down_blocks += [norm(min(n_ch, max_ch)), act, pad(1),
+                                nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, stride=2)]
                 n_ch *= 2
+            down_blocks += [norm(min(n_ch, max_ch))]
 
             trans_blocks += [trans_module(n_ch=min(n_ch, max_ch)) for _ in range(n_RB)]
 
             for _ in range(n_down):
-                up_blocks += self.add_norm_act_layer(norm, n_ch=min(n_ch, max_ch), act=act)
-                up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch//2, max_ch), kernel_size=3, padding=1,
-                                                 stride=2, output_padding=1)]
+                up_blocks += [act, nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch//2, max_ch), kernel_size=3, padding=1,
+                                                      stride=2, output_padding=1), norm(min(n_ch//2, max_ch))]
                 n_ch //= 2
-            up_blocks += [norm(n_ch), act]
-            up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7, padding=0, stride=1)]
+            up_blocks += [act, pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7, padding=0, stride=1)]
 
         else:
-            down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7, padding=0, stride=1)]
-            down_blocks += self.add_norm_act_layer(norm, n_ch=n_ch, act=act)
+            down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7, padding=0, stride=1), norm(n_ch), act]
             for _ in range(n_down):
                 down_blocks += [pad(1), nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=0,
-                                                  stride=2)]
-                down_blocks += self.add_norm_act_layer(norm, n_ch=min(n_ch, max_ch), act=act)
+                                                  stride=2), norm(min(2 * n_ch, max_ch)), act]
                 n_ch *= 2
 
             trans_blocks += [trans_module(n_ch=min(n_ch, max_ch)) for _ in range(n_RB)]
 
             for _ in range(n_down):
                 up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
-                                                 stride=2, output_padding=1)]
-                up_blocks += self.add_norm_act_layer(norm, n_ch=min(n_ch, max_ch), act=act)
+                                                 stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act]
                 n_ch //= 2
 
             up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7, padding=0, stride=1)]

@@ -7,7 +7,7 @@ class BaseOption(object):
         self.parser = argparse.ArgumentParser()
 
         self.parser.add_argument('--debug', action='store_true', default=False, help='for checking code')
-        self.parser.add_argument('--gpu_ids', type=int, default=2, help='gpu number. If -1, use cpu')
+        self.parser.add_argument('--gpu_ids', type=int, default=1, help='gpu number. If -1, use cpu')
 
         self.parser.add_argument('--batch_size', type=int, default=1, help='the number of batch_size')
         self.parser.add_argument('--dataset_name', type=str, default='Cityscapes', help='[Cityscapes, Custom]')
@@ -19,32 +19,27 @@ class BaseOption(object):
         self.parser.add_argument('--max_ch_C', type=int, default=2 ** 10, help='max nb of channels in critic')
 
         # about RCAN
-        self.parser.add_argument('--n_RCAB', type=int, default=1,
-                                 help='the number of RCAB blocks per a residual group')
         self.parser.add_argument('--n_RG', type=int, default=6, help='the number of residual groups')
-        self.parser.add_argument('--RCA_ch', type=int, default=1024, help='the number of ch RCA has')
         self.parser.add_argument('--reduction_rate', type=int, default=16)
 
         # about RDN
-        self.parser.add_argument('--growth_rate', type=int, default=512)
-        self.parser.add_argument('--n_dense_layers', type=int, default=8, help='how many dense layers in a RDB')
-        self.parser.add_argument('--n_RDB', type=int, default=4, help='the number of residual dense blocks')
-        self.parser.add_argument('--RDB_ch', type=int, default=1024, help='the number of ch RDN started with')
-
+        self.parser.add_argument('--efficient', action='store_true', default=True)
+        self.parser.add_argument('--growth_rate', type=int, default=256)
+        self.parser.add_argument('--n_dense_layers', type=int, default=4, help='how many dense layers in a RDB')
         # about RN
-        self.parser.add_argument('--n_RB', type=int, default=9, help='the number of residual blocks')
+        self.parser.add_argument('--n_RB', type=int, default=16, help='the number of residual blocks')
 
         # about architecture
-        self.parser.add_argument('--equal_FM_weights', action='store_true', default=False)
+        self.parser.add_argument('--equal_FM_weights', action='store_true', default=True)
         self.parser.add_argument('--FM_lambda', type=int, default=10, help='weight for feature matching loss')
-        self.parser.add_argument('--pre_activation', action='store_true', default=True)
-        self.parser.add_argument('--Res_C', action='store_true', default=True)
+        self.parser.add_argument('--pre_activation', action='store_true', default=False)
+        self.parser.add_argument('--Res_C', action='store_true', default=False)
         self.parser.add_argument('--progression', action='store_true', default=False,
                                  help='if you want progressive training')
         self.parser.add_argument('--trans_network', type=str, default='RN',
                                  help='Network you want to use for image translation. "RN" for residual network, "RDN"'
                                       ' for Residual dense network, "RCAN" for residual channel attention network')
-        self.parser.add_argument('--n_downsample_C', type=int, default=3)
+        self.parser.add_argument('--n_downsample_C', type=int, default=4)
         self.parser.add_argument('--n_enhance_blocks', type=int, default=2,
                                  help='the number of enhancement blocks per level in decoder')
         self.parser.add_argument('--n_RB_C', type=int, default=4)
@@ -52,6 +47,7 @@ class BaseOption(object):
         self.parser.add_argument('--pad_type', type=str, default='reflection', help='[reflection, replication, zero]')
         self.parser.add_argument('--pad_type_C', type=str, default='zero')
         self.parser.add_argument('--tanh', action='store_true', default=True, help='if you want to use tanh for RGB')
+        self.parser.add_argument('--trans_module', type=str, default='RDB', help='[RB, RCAB, RDB, RDCAB]')
         self.parser.add_argument('--use_boundary_map', action='store_true', default=True,
                                  help='if you want to use boundary map')
 

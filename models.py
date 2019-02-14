@@ -164,17 +164,18 @@ class Generator(BaseGenerator):
 
             trans_blocks += [trans_module(n_ch=min(n_ch, max_ch)) for _ in range(n_RB)]
 
-            for _ in range(n_down):
-                up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch//2, max_ch), kernel_size=3, padding=1,
-                                                 stride=2, output_padding=1), norm(min(n_ch//2, max_ch)), act]
-                n_ch //= 2
-
             if pixel_shuffle:
-                up_blocks = [pad(1), nn.Conv2d(n_ch, n_down * n_ch, kernel_size=3), nn.PixelShuffle(2 ** n_down)]
+                up_blocks = [pad(1), nn.Conv2d(n_ch, 4 * n_down * n_ch, kernel_size=3), nn.PixelShuffle(2 ** n_down)]
                 n_ch = opt.n_gf
 
             else:
-                up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7)]
+                for _ in range(n_down):
+                    up_blocks += [
+                        nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
+                                           stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act]
+                    n_ch //= 2
+
+            up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7)]
 
         else:
             down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7), norm(n_ch), act]

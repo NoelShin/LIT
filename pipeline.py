@@ -27,7 +27,7 @@ class CustomDataset(torch.utils.data.Dataset):
                     glob.glob(os.path.join(dataset_dir, 'Train', 'Input', 'InstanceMap', '*.' + format)))
                 self.target_path_list = sorted(glob.glob(os.path.join(dataset_dir, 'Train', 'Target', '*.' + format)))
 
-            elif not is_train:
+            else:
                 self.label_path_list = sorted(
                     glob.glob(os.path.join(dataset_dir, 'Test', 'Input', 'LabelMap', '*.' + format)))
                 self.instance_path_list = sorted(
@@ -40,7 +40,7 @@ class CustomDataset(torch.utils.data.Dataset):
                     glob.glob(os.path.join(dataset_dir, 'Train', 'Input', 'LabelMap', '*.' + format)))
                 self.target_path_list = sorted(glob.glob(os.path.join(dataset_dir, 'Train', 'Target', '*.' + format)))
 
-            elif not is_train:
+            else:
                 self.label_path_list = sorted(
                     glob.glob(os.path.join(dataset_dir, 'Test', 'Input', 'LabelMap', '*.' + format)))
                 self.target_path_list = sorted(glob.glob(os.path.join(dataset_dir, 'Test', 'Target', '*.' + format)))
@@ -51,13 +51,14 @@ class CustomDataset(torch.utils.data.Dataset):
         self.condition = opt.C_condition
         self.dataset_name = dataset_name
         self.flip = opt.flip
-        self.min_image_size = opt.min_image_size
         self.image_size = opt.image_size
         self.is_train = is_train
+        self.min_image_size = opt.min_image_size
+        self.progression = opt.progression
 
         self.level = opt.n_downsample if level is None else level
 
-    def get_transform(self, normalize=True, level_size=False):
+    def get_transform(self, normalize=False, level_size=False):
         transform_list = []
 
         if not level_size:
@@ -111,14 +112,14 @@ class CustomDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         if self.dataset_name == 'Cityscapes':
-            if self.flip:
+            if self.flip and self.is_train:
                 self.coin = random.random() > 0.5
 
             label_array = Image.open(self.label_path_list[index])
-            label_tensor = self.get_transform(normalize=False, level_size=False)(label_array) * 255.0
+            label_tensor = self.get_transform()(label_array) * 255.0
 
             instance_array = Image.open(self.instance_path_list[index])
-            instance_tensor = self.get_transform(normalize=False, level_size=False)(instance_array)
+            instance_tensor = self.get_transform()(instance_array)
 
             input_tensor = self.encode_input(label_tensor, instance_tensor)
 
@@ -127,16 +128,16 @@ class CustomDataset(torch.utils.data.Dataset):
 
             data_dict = {'input_tensor': input_tensor, 'target_tensor': target_tensor}
 
-            if self.condition:
-                C_label_tensor = self.get_transform(normalize=False, level_size=True)(label_array) * 255.0
-                C_instance_tensor = self.get_transform(normalize=False, level_size=True)(instance_array)
+            if self.progression or self.condition:
+                C_label_tensor = self.get_transform(level_size=True)(label_array) * 255.0
+                C_instance_tensor = self.get_transform(level_size=True)(instance_array)
                 C_input_tensor = self.encode_input(C_label_tensor, C_instance_tensor)
 
                 data_dict.update({'C_input_tensor': C_input_tensor})
 
         elif self.dataset_name == 'Custom':
             label_array = Image.open(self.label_path_list[index])
-            label_tensor = self.get_transform(normalize=True, level_size=False)(label_array)
+            label_tensor = self.get_transform(normalize=True)(label_array)
 
             input_tensor = self.encode_input(label_tensor)
 
@@ -145,11 +146,11 @@ class CustomDataset(torch.utils.data.Dataset):
 
             data_dict = {'input_tensor': input_tensor, 'target_tensor': target_tensor}
 
-            if self.condition:
+            if self.progression or self.condition:
                 C_label_tensor = self.get_transform(normalize=True, level_size=True)(label_array)
                 C_input_tensor = self.encode_input(C_label_tensor)
 
-                data_dict.update({'D_input_tensor': C_input_tensor})
+                data_dict.update({'C_input_tensor': C_input_tensor})
 
         else:
             raise NotImplementedError("Please check dataset_name. It should be in ['Cityscapes', 'Custom'].")

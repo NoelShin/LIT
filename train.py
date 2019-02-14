@@ -13,28 +13,15 @@ if __name__ == '__main__':
     opt = TrainOption().parse()
     os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
     if opt.progression:
-        if opt.U_net:
-            if opt.U_net_gate:
-                from models import ProgressiveGatedUNetGenerator as Generator
-            else:
-                from models import ProgressiveUNetGenerator as Generator
-        else:
-            from models import ProgressiveGenerator as Generator
-            from models import ProgressiveResidualPatchCritic as Adversarial
+        from models import ProgressiveGenerator as Generator
+        from models import ProgressiveResidualPatchCritic as Adversarial
 
     else:
-        if opt.U_net:
-            if opt.U_net_gate:
-                from models import GatedUNetGenerator as Generator
-
-            else:
-                from models import UNetGenerator as Generator
+        from models import Generator
+        if opt.Res_C:
+            from models import ResidualPatchCritic as Adversarial
         else:
-            from models import Generator
-            if opt.Res_C:
-                from models import ResidualPatchCritic as Adversarial
-            else:
-                from models import Critic as Adversarial
+            from models import Critic as Adversarial
 
     if opt.GAN_type == 'LSGAN':
         from loss import LSGANLoss as Loss
@@ -110,6 +97,7 @@ if __name__ == '__main__':
             for _, data_dict in enumerate(data_loader):
                 time = datetime.datetime.now()
                 current_step += 1
+                
                 if USE_CUDA:
                     device = torch.device('cuda', 0)
                     for k, v in data_dict.items():

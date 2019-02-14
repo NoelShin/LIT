@@ -147,6 +147,7 @@ class Generator(BaseGenerator):
         n_down = opt.n_downsample
         n_RB = opt.n_RB
         output_ch = opt.output_ch
+        pixel_shuffle = opt.pixel_shuffle
         pre_activation = opt.pre_activation
         trans_module = self.get_trans_module(opt, act, norm, pad)
 
@@ -178,10 +179,15 @@ class Generator(BaseGenerator):
 
             trans_blocks += [trans_module(n_ch=min(n_ch, max_ch)) for _ in range(n_RB)]
 
-            for _ in range(n_down):
-                up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
-                                                 stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act]
-                n_ch //= 2
+            if pixel_shuffle:
+                up_blocks = [pad(1), nn.Conv2d(n_ch, n_down * n_ch, kernel_size=3), nn.PixelShuffle(2 ** n_down)]
+                n_ch = opt.n_gf
+
+            else:
+                for _ in range(n_down):
+                    up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
+                                                     stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act]
+                    n_ch //= 2
 
             up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7, padding=0, stride=1)]
         up_blocks += [nn.Tanh()] if opt.tanh else []

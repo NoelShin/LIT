@@ -9,43 +9,44 @@ def configure(opt):
     opt.format = 'png'
     opt.n_df = 64
 
-    if opt.dataset_name == 'Cityscapes':
+    dataset_name = opt.dataset_name
+    if dataset_name == 'Cityscapes':
+        opt.n_data = 2975
+        opt.output_ch = 3
+
         if opt.use_boundary_map:
             opt.input_ch = 36
-
         else:
             opt.input_ch = 35
 
         if opt.image_height == 512:
-            opt.half = True
             opt.image_size = (512, 1024)
             opt.n_downsample = 4
             opt.n_gf = 64
+
         elif opt.image_height == 1024:
-            opt.half = False
             opt.image_size = (1024, 2048)
             opt.n_downsample = 5
             opt.n_gf = 32
+        else:
+            raise NotImplementedError("Invalid image_height: {}".format(opt.image_height))
 
-        opt.n_data = 2975
-        opt.output_ch = 3
-
-    elif opt.dataset_name == 'Custom':
+    elif dataset_name == 'Custom':
         opt.input_ch = 1
-
-        if opt.image_height == 512:
-            opt.half = True
-            opt.image_size = (512, 512)
-            opt.n_gf = 64
-        elif opt.image_height == 1024:
-            opt.half = False
-            opt.image_size = (1024, 1024)
-            opt.n_gf = 32
-
         opt.output_ch = 1
 
+        if opt.image_height == 512:
+            opt.image_size = (512, 512)
+            opt.n_downsample = 4
+            opt.n_gf = 64
+
+        elif opt.image_height == 1024:
+            opt.image_size = (1024, 1024)
+            opt.n_downsample = 5
+            opt.n_gf = 32
+
     else:
-        raise NotImplementedError("Please check dataset_name. It should be in ['Cityscapes', 'Custom'].")
+        raise NotImplementedError("Please check dataset_name {}. It should be in ['Cityscapes', 'Custom'].".format(dataset_name))
 
     if opt.progression:
         opt.beta1, opt.beta2 = (0.0, 0.9)
@@ -60,93 +61,30 @@ def configure(opt):
     opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.n_downsample),
                           2 ** (np.log2(opt.image_size[1]) - opt.n_downsample))
 
-    dataset_name = opt.dataset_name
+    trans_module = opt.trans_module
+    progression = opt.progression
 
-    if opt.trans_module == 'RCAB':
-        if opt.progression:
-            if opt.U_net:
-                if opt.U_net_gate:
-                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RB,
-                                             progression=opt.progression, u_net=opt.U_net, gate=opt.U_net_gate)
-                else:
-                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB,
-                                             progression=opt.progression)
-            else:
-                model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB, progression=opt.progression)
-        else:
-            if opt.U_net:
-                if opt.U_net_gate:
-                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB,
-                                             u_net=opt.U_net, gate=opt.U_net_gate)
-                else:
-                    model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB,
-                                             u_net=opt.U_net)
-            else:
-                model_name = model_namer(opt.RCA_ch, RG=opt.n_RG, RCAB=opt.n_RCB)
+    args = list()
+    args.append(trans_module)
 
-    elif opt.trans_module == 'RDB' or opt.trans_module == 'RCADB':
-        if opt.progression:
-            if opt.U_net:
-                if opt.U_net_gate:
-                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB,
-                                             progression=opt.progression, u_net=opt.U_net, gate=opt.U_net_gate,
-                                             k=opt.growth_rate)
-                else:
-                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB,
-                                             progression=opt.progression, k=opt.growth_rate)
-            else:
-                model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB, k=opt.growth_rate,
-                                         rogression=opt.progression)
-        else:
-            if opt.U_net:
-                if opt.U_net_gate:
-                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB, k=opt.growth_rate,
-                                             u_net=opt.U_net, gate=opt.U_net_gate)
-                else:
-                    model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB, k=opt.growth_rate, u_net=opt.U_net)
-            else:
-                model_name = model_namer(n_l=opt.n_dense_layers, RDB=opt.n_RB, k=opt.growth_rate)
+    kwargs = dict()
+    kwargs.update({'RB': opt.n_RB})
+    kwargs.update({'prog': progression}) if progression else None
+    kwargs.update({'RG': opt.n_RG, }) if trans_module == 'RCAB' else None
+    kwargs.update({'L': opt.n_dense_layers, 'K': opt.growth_rate}) if trans_module == ('RDB' or 'RCADB') else None
+    kwargs.update({'C_down': opt.n_downsample_C, 'RB_C': opt.n_RB_C}) if opt.Res_C else None
 
-    elif opt.trans_module == 'RB':
-        if opt.progression:
-            if opt.U_net:
-                if opt.U_net_gate:
-                    model_name = model_namer(progression=opt.progression, u_net=opt.U_net, u_net_gate=opt.U_net_gate)
-                else:
-                    model_name = model_namer(progression=opt.progression, u_net=opt.U_net)
-            else:
-                model_name = model_namer(progression=opt.progression)
-        else:
-            if opt.U_net:
-                if opt.U_net_gate:
-                    model_name = model_namer(u_net=opt.U_net, u_net_gate=opt.U_net_gate)
-                else:
-                    model_name = model_namer(u_net=opt.U_net)
-            else:
-                if opt.Res_C:
-                    model_name = model_namer(n_RB_C=opt.n_RB_C, max_ch=opt.max_ch_C, down=opt.n_downsample_C, eq=opt.equal_FM_weights)
-                else:
-                    model_name = model_namer('vanilla')
-
+    model_name = model_namer(*args, **kwargs)
     make_dir(dataset_name, model_name, type='checkpoints')
 
     if opt.is_train:
         opt.image_dir = os.path.join('./checkpoints', dataset_name, 'Image/Training', model_name)
 
-    elif not opt.is_train:
+    else:
         opt.image_dir = os.path.join('./checkpoints', dataset_name, 'Image/Test', model_name)
 
     opt.model_dir = os.path.join('./checkpoints', dataset_name, 'Model', model_name)
     log_path = os.path.join('./checkpoints/', dataset_name, 'Model', model_name, 'opt.txt')
-
-    if os.path.isfile(log_path) and not opt.debug:
-        permission = input(
-            "{} log already exists. Do you really want to overwrite this log? Y/N. : ".format(model_name + '/opt'))
-        if permission == 'Y':
-            pass
-
-        else:
-            raise NotImplementedError("Please check {}".format(log_path))
 
     if opt.debug:
         opt.display_freq = 1
@@ -154,16 +92,23 @@ def configure(opt):
         opt.report_freq = 1
         opt.save_freq = 4
 
-    args = vars(opt)
-    with open(log_path, 'wt') as log:
-        log.write('-' * 50 + 'Options' + '-' * 50 + '\n')
-        print('-' * 50 + 'Options' + '-' * 50)
-        for k, v in sorted(args.items()):
-            log.write('{}: {}\n'.format(str(k), str(v)))
-            print("{}: {}".format(str(k), str(v)))
-        log.write('-' * 50 + 'End' + '-' * 50)
-        print('-' * 50 + 'End' + '-' * 50)
-        log.close()
+    if os.path.isfile(log_path) and not opt.debug:
+        permission = input(
+            "{} log already exists. Do you really want to overwrite this log? Y/N. : ".format(model_name + '/opt'))
+        if permission == 'Y':
+            args = vars(opt)
+            with open(log_path, 'wt') as log:
+                log.write('-' * 50 + 'Options' + '-' * 50 + '\n')
+                print('-' * 50 + 'Options' + '-' * 50)
+                for k, v in sorted(args.items()):
+                    log.write('{}: {}\n'.format(str(k), str(v)))
+                    print("{}: {}".format(str(k), str(v)))
+                log.write('-' * 50 + 'End' + '-' * 50)
+                print('-' * 50 + 'End' + '-' * 50)
+                log.close()
+
+        else:
+            raise NotImplementedError("Please check {}".format(log_path))
 
 
 def make_dir(dataset_name=None, model_name=None, type='checkpoints'):
@@ -184,15 +129,13 @@ def make_dir(dataset_name=None, model_name=None, type='checkpoints'):
 def model_namer(*elements, **k_elements):
     name = ''
 
-    for k, v in sorted(k_elements.items()):
-        name += str(k) + '_' + str(v) + '_'
-
     for v in elements:
         name += str(v) + '_'
 
-    name = name.strip('_')
+    for k, v in sorted(k_elements.items()):
+        name += str(k) + '_' + str(v) + '_'
 
-    return name
+    return name.strip('_')
 
 
 class Manager(object):

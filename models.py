@@ -155,7 +155,7 @@ class Generator(BaseGenerator):
         trans_blocks = []
         up_blocks = []
         if pre_activation:
-            down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7, padding=0, stride=1)]
+            down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7)]
             for i in range(n_down):
                 down_blocks += [norm(min(n_ch, max_ch)), act, pad(1),
                                 nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, stride=2)]
@@ -165,16 +165,22 @@ class Generator(BaseGenerator):
             trans_blocks += [trans_module(n_ch=min(n_ch, max_ch)) for _ in range(n_RB)]
 
             for _ in range(n_down):
-                up_blocks += [act, nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch//2, max_ch), kernel_size=3, padding=1,
-                                                      stride=2, output_padding=1), norm(min(n_ch//2, max_ch))]
+                up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch//2, max_ch), kernel_size=3, padding=1,
+                                                 stride=2, output_padding=1), norm(min(n_ch//2, max_ch)), act]
                 n_ch //= 2
-            up_blocks += [act, pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7, padding=0, stride=1)]
+
+            if pixel_shuffle:
+                up_blocks = [pad(1), nn.Conv2d(n_ch, n_down * n_ch, kernel_size=3), nn.PixelShuffle(2 ** n_down)]
+                n_ch = opt.n_gf
+
+            else:
+                up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7)]
 
         else:
-            down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7, padding=0, stride=1), norm(n_ch), act]
+            down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7), norm(n_ch), act]
             for _ in range(n_down):
-                down_blocks += [pad(1), nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=0,
-                                                  stride=2), norm(min(2 * n_ch, max_ch)), act]
+                down_blocks += [pad(1), nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, stride=2),
+                                norm(min(2 * n_ch, max_ch)), act]
                 n_ch *= 2
 
             trans_blocks += [trans_module(n_ch=min(n_ch, max_ch)) for _ in range(n_RB)]
@@ -189,7 +195,7 @@ class Generator(BaseGenerator):
                                                      stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act]
                     n_ch //= 2
 
-            up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7, padding=0, stride=1)]
+            up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7)]
         up_blocks += [nn.Tanh()] if opt.tanh else []
 
         self.down_blocks = nn.Sequential(*down_blocks)
@@ -222,7 +228,7 @@ class ProgressiveGenerator(Generator):
 
         n_ch = opt.n_gf * 2 ** n_down
         rgb_blocks = [[norm(min(n_ch, max_ch)), act, pad(1),
-                       nn.Conv2d(min(n_ch, max_ch), output_ch, kernel_size=3, padding=0, stride=1)]]
+                       nn.Conv2d(min(n_ch, max_ch), output_ch, kernel_size=3)]]
         rgb_blocks[-1].append(nn.Tanh()) if opt.tanh else None
         delattr(self, 'up_blocks')
         if pre_activation:
@@ -231,7 +237,7 @@ class ProgressiveGenerator(Generator):
                 up_block += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
                                                 stride=2, output_padding=1)]
                 rgb_blocks += [[norm(min(n_ch // 2, max_ch)), act, pad(1),
-                                nn.Conv2d(min(n_ch // 2, max_ch), output_ch, kernel_size=3, padding=0, stride=1)]]
+                                nn.Conv2d(min(n_ch // 2, max_ch), output_ch, kernel_size=3)]]
                 rgb_blocks[-1].append(nn.Tanh()) if opt.tanh else None
                 setattr(self, 'Up_block_{}'.format(i), nn.Sequential(*up_block))
                 n_ch //= 2
@@ -241,7 +247,7 @@ class ProgressiveGenerator(Generator):
                                                stride=2, output_padding=1)]
                 up_block += self.add_norm_act_layer(norm, n_ch=min(n_ch // 2, max_ch), act=act)
 
-                rgb_blocks += [[nn.Conv2d(min(n_ch // 2, max_ch), output_ch, kernel_size=3, padding=0, stride=1)]]
+                rgb_blocks += [[nn.Conv2d(min(n_ch // 2, max_ch), output_ch, kernel_size=3)]]
                 rgb_blocks[-1].append(nn.Tanh()) if opt.tanh else None
                 setattr(self, 'Up_block_{}'.format(i), nn.Sequential(*up_block))
                 n_ch //= 2
@@ -286,33 +292,33 @@ class PatchCritic(BaseNetwork):
 
             if patch_size == 16:
                 blocks += [[*self.add_norm_act_layer(norm, n_ch=2 * n_df, act=act),
-                            nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=1)]]
-                blocks += [[nn.Conv2d(4 * n_df, 1, kernel_size=4, padding=1, stride=1)]]
+                            nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1)]]
+                blocks += [[nn.Conv2d(4 * n_df, 1, kernel_size=4, padding=1)]]
 
             elif patch_size == 70:
                 blocks += [[*self.add_norm_act_layer(norm, n_ch=2 * n_df, act=act),
                             nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=2)]]
 
                 blocks += [[*self.add_norm_act_layer(norm, n_ch=4 * n_df, act=act),
-                            nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1, stride=1)]]
+                            nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1)]]
                 blocks += [[*self.add_norm_act_layer(norm, n_ch=8 * n_df, act=act),
-                            nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1, stride=1)]]
+                            nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1)]]
 
         else:
             blocks = [[nn.Conv2d(input_channel, n_df, kernel_size=4, padding=1, stride=2), act]]
             blocks += [[nn.Conv2d(n_df, 2 * n_df, kernel_size=4, padding=1, stride=2),
                         *self.add_norm_act_layer(norm, n_ch=2 * n_df, act=act)]]
             if patch_size == 16:
-                blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=1),
+                blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1),
                             *self.add_norm_act_layer(norm, n_ch=4 * n_df, act=act)]]
-                blocks += [[nn.Conv2d(4 * n_df, 1, kernel_size=4, padding=1, stride=1)]]
+                blocks += [[nn.Conv2d(4 * n_df, 1, kernel_size=4, padding=1)]]
 
             elif patch_size == 70:
                 blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=2),
                             *self.add_norm_act_layer(norm, n_ch=4 * n_df, act=act)]]
-                blocks += [[nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1, stride=1),
+                blocks += [[nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1),
                             *self.add_norm_act_layer(norm, n_ch=8 * n_df, act=act)]]
-                blocks += [[nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1, stride=1)]]
+                blocks += [[nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1)]]
 
         self.n_blocks = len(blocks)
         for i in range(self.n_blocks):
@@ -355,8 +361,7 @@ class ResidualPatchCritic(BaseNetwork):
             for _ in range(n_RB_C):
                 res_blocks += [[ResidualBlock(min(n_ch, max_ch), act, norm, pad, pre_activation=True)]]
 
-            out_conv = [norm(min(n_ch, max_ch)), act, nn.Conv2d(min(n_ch, max_ch), 1, kernel_size=3, padding=1,
-                                                                stride=1)]
+            out_conv = [norm(min(n_ch, max_ch)), act, nn.Conv2d(min(n_ch, max_ch), 1, kernel_size=3, padding=1)]
             self.out_conv = nn.Sequential(*out_conv)
 
         else:
@@ -368,7 +373,7 @@ class ResidualPatchCritic(BaseNetwork):
 
             for _ in range(n_RB_C):
                 res_blocks += [[ResidualBlock(min(n_ch, max_ch), act, norm, pad, pre_activation=False)]]
-            self.out_conv = nn.Conv2d(min(n_ch, max_ch), 1, kernel_size=3, padding=1, stride=1)
+            self.out_conv = nn.Conv2d(min(n_ch, max_ch), 1, kernel_size=3, padding=1)
 
         self.n_in_conv = len(in_conv)
         self.n_down_blocks = len(down_blocks)
@@ -435,13 +440,12 @@ class ProgressiveResidualPatchCritic(BaseNetwork):
             for i in range(n_RB_C):
                 setattr(self, 'Residual_block_{}'.format(i), ResidualBlock(n_ch, act, norm, pad, pre_activation=True))
 
-            out_conv = [norm(min(n_ch, max_ch)), act, nn.Conv2d(min(n_ch, max_ch), 1, kernel_size=3, padding=1,
-                                                                stride=1)]
+            out_conv = [norm(min(n_ch, max_ch)), act, nn.Conv2d(min(n_ch, max_ch), 1, kernel_size=3, padding=1)]
             self.out_conv = nn.Sequential(*out_conv)
 
         else:
             for i in range(n_in_conv):
-                in_conv = [nn.Conv2d(input_ch, n_ch, kernel_size=3, padding=1, stride=1), act]
+                in_conv = [nn.Conv2d(input_ch, n_ch, kernel_size=3, padding=1), act]
                 setattr(self, 'In_conv_{}'.format(i), nn.Sequential(*in_conv))
                 n_ch *= 2
 
@@ -453,7 +457,7 @@ class ProgressiveResidualPatchCritic(BaseNetwork):
 
             for i in range(n_RB_C):
                 setattr(self, 'Residual_block_{}'.format(i), ResidualBlock(n_ch, act, norm, pad, pre_activation=False))
-            self.out_conv = nn.Conv2d(n_ch, 1, kernel_size=3, stride=1, padding=1)
+            self.out_conv = nn.Conv2d(n_ch, 1, kernel_size=3, padding=1)
 
         self.n_df = opt.n_df
         self.n_down = n_down

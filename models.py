@@ -14,25 +14,6 @@ class BaseGenerator(BaseNetwork):
         super(BaseGenerator, self).__init__()
 
     @staticmethod
-    def get_decoder(opt, act, norm, pad, kernel_size=3):
-        if opt.progression:
-            from networks.decoders import ProgressiveDecoder
-            decoder = ProgressiveDecoder(opt.n_gf * 2 ** opt.n_downsample, opt.output_ch, opt.n_downsample,
-                                         kernel_size=kernel_size, act=act, norm=norm, pad=pad, tanh=True)
-        else:
-            from networks.decoders import Decoder
-            decoder = Decoder(opt.n_gf * 2 ** opt.n_downsample, opt.output_ch, opt.n_downsample,
-                              kernel_size=kernel_size, act=act, norm=norm, pad=pad, tanh=True)
-        return decoder
-
-    @staticmethod
-    def get_encoder(opt, act, norm, pad, kernel_size=3):
-        from networks.encoders import Encoder
-        encoder = Encoder(opt.input_ch, opt.n_gf, opt.n_downsample, kernel_size=kernel_size,
-                          act=act, norm=norm, pad=pad)
-        return encoder
-
-    @staticmethod
     def get_enhance_layer(opt, n_ch, act, norm, pad):
         n_enhance = opt.n_enhance_blocks
         trans_network = opt.trans_network
@@ -80,35 +61,6 @@ class BaseGenerator(BaseNetwork):
 
         return module
 
-    @staticmethod
-    def get_trans_network(opt, act, norm, pad, kernel_size=3, pre_activation=False):
-        if opt.trans_network == 'RCAN':
-            from networks.translators import ResidualChannelAttentionNetwork
-            net = ResidualChannelAttentionNetwork(opt.n_RG, opt.n_RCAB, opt.RCA_ch,
-                                                  opt.reduction_rate, kernel_size=kernel_size, act=act, norm=norm,
-                                                  pad=pad, pre_activation=pre_activation)
-
-        elif opt.trans_network == 'RN':
-            from networks.translators import ResidualNetwork
-            net = ResidualNetwork(opt.n_RB, opt.n_gf * 2 ** opt.n_downsample, kernel_size=kernel_size, act=act,
-                                  norm=norm, pad=pad, pre_activation=pre_activation)
-
-        elif opt.trans_network == 'RDN':
-            from networks.translators import ResidualDenseNetwork
-            growth_rate = opt.growth_rate
-            n_dense_layers = opt.n_dense_layers
-            n_downsample = opt.n_downsample
-            n_gf = opt.n_gf
-            n_RDB = opt.n_RDB
-            net = ResidualDenseNetwork(n_RDB, n_gf * 2 ** n_downsample, growth_rate,
-                                       n_dense_layers, kernel_size=kernel_size, act=act, norm=norm, pad=pad,
-                                       pre_activation=pre_activation)
-
-        else:
-            raise NotImplementedError("Invalid translation unit {}. Please check trans_type option.".
-                                      format(opt.trans_unit))
-        return net
-
 
 class Critic(BaseNetwork):
     def __init__(self, opt):
@@ -137,7 +89,8 @@ class Critic(BaseNetwork):
 class Generator(BaseGenerator):
     def __init__(self, opt):
         super(Generator, self).__init__()
-        act = self.get_act_layer(opt.G_act, inplace=True)
+        is_prelu = True if opt.G_act == 'prelu' else False
+        act = self.get_act_layer(opt.G_act, inplace=True) if not is_prelu else nn.PReLU
         norm = self.get_norm_layer(opt.norm_type)
         pad = self.get_pad_layer(opt.pad_type)
 
@@ -157,23 +110,18 @@ class Generator(BaseGenerator):
         if pre_activation:
             down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7)]
             for i in range(n_down):
-                down_blocks += [norm(min(n_ch, max_ch)), act, pad(1),
+                down_blocks += [norm(min(n_ch, max_ch)), act(n_ch), pad(1),
                                 nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, stride=2)]
                 n_ch *= 2
+
             down_blocks += [norm(min(n_ch, max_ch))]
 
             trans_blocks += [trans_module(n_ch=min(n_ch, max_ch)) for _ in range(n_RB)]
 
-            if pixel_shuffle:
-                up_blocks = [pad(1), nn.Conv2d(n_ch, 4 * n_down * n_ch, kernel_size=3), nn.PixelShuffle(2 ** n_down)]
-                n_ch = opt.n_gf
-
-            else:
-                for _ in range(n_down):
-                    up_blocks += [
-                        nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
-                                           stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act]
-                    n_ch //= 2
+            for _ in range(n_down):
+                up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
+                                                 stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act(n_ch//2)]
+                n_ch //= 2
 
             up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7)]
 

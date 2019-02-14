@@ -14,7 +14,7 @@ class DenseLayer(BaseModule):
         pad = self.get_pad_layer(pad) if isinstance(pad, str) else pad
 
         if pre_activation:
-            layer = [act, pad(1), nn.Conv2d(n_ch, growth_rate, kernel_size=kernel_size, bias=False), norm(growth_rate),
+            layer = [pad(1), nn.Conv2d(n_ch, growth_rate, kernel_size=kernel_size, bias=False), act(growth_rate), norm(growth_rate),
                      nn.LeakyReLU(1.0, True)]  # without activation at the last, it consumes more memory without reason.
             # plz advice us if you have any idea about this phenomenon.
 
@@ -46,13 +46,15 @@ class ResidualDenseBlock(BaseModule):
             n_ch += growth_rate
 
         if pre_activation:
-            LFF = [act, nn.Conv2d(n_ch, init_ch, kernel_size=1, bias=False), norm(init_ch), nn.LeakyReLU(1.0, True)]
+            LFF = [nn.Conv2d(n_ch, init_ch, kernel_size=1, bias=False), norm(init_ch), nn.LeakyReLU(1.0, True)]
         else:
             LFF = [nn.Conv2d(n_ch, init_ch, kernel_size=1, bias=False), norm(init_ch), nn.LeakyReLU(1.0, True)]
 
         self.add_module('LFF', nn.Sequential(*LFF))  # local feature fusion
 
         self.efficient = efficient
+        self.init_ch = init_ch
+        self.n_ch = n_ch
         self.n_dense_layers = n_dense_layers
 
     def function(self, *inputs):
@@ -74,7 +76,15 @@ class ResidualChannelAttentionDenseBlock(ResidualDenseBlock):
     def __init__(self, n_ch, growth_rate, n_dense_layers, act, norm, pad, kernel_size=3, pre_activation=False):
         super(ResidualChannelAttentionDenseBlock, self).__init__(n_ch, growth_rate, n_dense_layers, act, norm, pad,
                                                                  kernel_size=kernel_size, pre_activation=pre_activation)
-        self.add_module('CA', ChannelAttentionLayer(n_ch))
+        delattr(self, 'LFF')
+        if pre_activation:
+            LFF = [nn.Conv2d(self.n_ch, self.init_ch, kernel_size=1, bias=False),
+                   norm(self.init_ch), nn.LeakyReLU(1.0, True)]
+        else:
+            LFF = [ChannelAttentionLayer(self.n_ch), nn.Conv2d(self.n_ch, self.init_ch, kernel_size=1, bias=False),
+                   norm(self.init_ch), nn.LeakyReLU(1.0, True)]
+
+        self.add_module('LFF', nn.Sequential(*LFF))  # local feature fusion
 
     def forward(self, x):
         features = [x]
@@ -85,5 +95,4 @@ class ResidualChannelAttentionDenseBlock(ResidualDenseBlock):
             x = x + checkpoint(self.function, *features)
         else:
             x = x + getattr(self, 'LFF')((torch.cat(*features, dim=1)))  # local residual learning
-        x = getattr(self, 'CA')(x)
         return x

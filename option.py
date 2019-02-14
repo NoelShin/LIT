@@ -26,7 +26,6 @@ class BaseOption(object):
         self.parser.add_argument('--efficient', action='store_true', default=True)
         self.parser.add_argument('--growth_rate', type=int, default=256)
         self.parser.add_argument('--n_dense_layers', type=int, default=4, help='how many dense layers in a RDB')
-        # about RN
         self.parser.add_argument('--n_RB', type=int, default=10, help='the number of residual blocks')
 
         # about architecture
@@ -42,10 +41,11 @@ class BaseOption(object):
         self.parser.add_argument('--n_downsample_C', type=int, default=4)
         self.parser.add_argument('--n_enhance_blocks', type=int, default=2,
                                  help='the number of enhancement blocks per level in decoder')
-        self.parser.add_argument('--n_RB_C', type=int, default=4)
+        self.parser.add_argument('--n_RB_C', type=int, default=3)
         self.parser.add_argument('--n_workers', type=int, default=2, help='how many threads you want to use')
         self.parser.add_argument('--pad_type', type=str, default='reflection', help='[reflection, replication, zero]')
         self.parser.add_argument('--pad_type_C', type=str, default='zero')
+        self.parser.add_argument('--pixel_shuffle', action='store_true', default=True)
         self.parser.add_argument('--tanh', action='store_true', default=True, help='if you want to use tanh for RGB')
         self.parser.add_argument('--trans_module', type=str, default='RDB', help='[RB, RCAB, RDB, RDCAB]')
         self.parser.add_argument('--use_boundary_map', action='store_true', default=True,

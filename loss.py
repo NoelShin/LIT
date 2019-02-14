@@ -7,14 +7,17 @@ import numpy as np
 class Loss(object):
     def __init__(self, opt):
         if opt.FM:
-            self.equal_FM_weights = opt.equal_FM_weights
             self.FM = True
-            self.FM_criterion = self.get_loss(opt.FM_criterion)
+            self.FM_criterion = self.get_criterion(opt.FM_criterion)
             self.FM_lambda = opt.FM_lambda
 
             if opt.Res_C:
-                self.n_down = opt.n_downsample_C if not opt.progression else opt.n_downsample
+                self.equal_FM_weights = False
+                self.n_down = opt.n_downsample if opt.progression else opt.n_downsample_C
                 self.n_RB_C = opt.n_RB_C
+
+            else:
+                self.equal_FM_weights = True
 
         else:
             self.FM = False
@@ -76,7 +79,7 @@ class Loss(object):
         return GP
 
     @staticmethod
-    def get_loss(type):
+    def get_criterion(type):
         if type == 'L1':
             criterion = nn.L1Loss()
 

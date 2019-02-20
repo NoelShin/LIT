@@ -12,7 +12,7 @@ class Loss(object):
             self.FM_lambda = opt.FM_lambda
 
             if opt.Res_C:
-                self.equal_FM_weights = False
+                self.equal_FM_weights = True
                 self.n_down = opt.n_downsample if opt.progression else opt.n_downsample_C
                 self.n_RB_C = opt.n_RB_C
 

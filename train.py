@@ -1,5 +1,6 @@
 if __name__ == '__main__':
     import os
+
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import torch
     import numpy as np
@@ -14,10 +15,11 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
     if opt.progression:
         from models import ProgressiveGenerator as Generator
-        from models import ProgressiveResidualPatchCritic as Adversarial
+        from models import ProgressivePatchCritic as Adversarial
 
     else:
         from models import Generator
+
         if opt.Res_C:
             from models import ResidualPatchCritic as Adversarial
         else:
@@ -43,11 +45,12 @@ if __name__ == '__main__':
     current_step = 0
     lr = opt.lr
     n_epochs_per_lod = opt.n_epochs_per_lod
-    nb_transition = n_epochs_per_lod / 2
+    n_iter_per_lod = n_epochs_per_lod * opt.n_data
+    nb_transition = n_iter_per_lod / 2
     package = {}
     start_time = datetime.datetime.now()
     if opt.progression:
-        for level in range(opt.n_downsample + 1):  # 0 1 2 3 4
+        for level in range(opt.n_downsample + 1):  # 0 1 2 3 4 5
             level_in = level
             dataset = CustomDataset(opt, level=level)
             data_loader = torch.utils.data.DataLoader(dataset=dataset,
@@ -97,7 +100,7 @@ if __name__ == '__main__':
             for _, data_dict in enumerate(data_loader):
                 time = datetime.datetime.now()
                 current_step += 1
-                
+
                 if USE_CUDA:
                     device = torch.device('cuda', 0)
                     for k, v in data_dict.items():

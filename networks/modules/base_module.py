@@ -10,21 +10,21 @@ class BaseModule(nn.Module):
     @staticmethod
     def add_norm_act_layer(norm=None, act=None, n_ch=None):
         layer = []
-        
+
         if isinstance(norm, partial):
-            layer += [[norm(n_ch)]]
+            layer += [norm(n_ch)]
 
         elif not norm:
             pass
 
         elif norm.__name__ == 'PixelNorm':
-            layer += [[norm]]
+            layer += [norm]
 
         else:
             raise NotImplementedError
 
         if act:
-            layer[-1].append(act)
+            layer += [act]
 
         return layer
 
@@ -32,7 +32,10 @@ class BaseModule(nn.Module):
     def get_act_layer(type, inplace=True, negative_slope=None):
         if type == 'leaky_relu':
             assert negative_slope != 0.0
-            layer = nn.LeakyReLU(negative_slope=negative_slope, inplace=inplace)
+            layer = nn.LeakyReLU(negative_slope=0.2, inplace=inplace)
+
+        elif type == 'prelu':
+            layer = nn.PReLU
 
         elif type == 'relu':
             layer = nn.ReLU(inplace=inplace)

@@ -22,12 +22,14 @@ def configure(opt):
         if opt.image_height == 512:
             opt.image_size = (512, 1024)
             opt.n_downsample = 4
+            opt.n_df = 64
             opt.n_gf = 64
 
         elif opt.image_height == 1024:
             opt.image_size = (1024, 2048)
             opt.n_downsample = 5
-            opt.n_gf = 32
+            opt.n_df = 16
+            opt.n_gf = 16
         else:
             raise NotImplementedError("Invalid image_height: {}".format(opt.image_height))
 
@@ -38,11 +40,13 @@ def configure(opt):
         if opt.image_height == 512:
             opt.image_size = (512, 512)
             opt.n_downsample = 4
+            opt.n_df = 64
             opt.n_gf = 64
 
         elif opt.image_height == 1024:
             opt.image_size = (1024, 1024)
             opt.n_downsample = 5
+            opt.n_df = 32
             opt.n_gf = 32
 
     else:
@@ -52,11 +56,14 @@ def configure(opt):
         opt.beta1, opt.beta2 = (0.0, 0.9)
         opt.n_C = 1
         opt.patch_size = 16
+        opt.save_freq = 2975 * 20
+        opt.VGG = False
 
     else:
         opt.beta1, opt.beta2 = (0.5, 0.9)
-        opt.n_C = 2
+        opt.n_C = 1 if opt.Res_C else 2
         opt.patch_size = 70
+        opt.VGG =True
 
     opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.n_downsample),
                           2 ** (np.log2(opt.image_size[1]) - opt.n_downsample))
@@ -66,6 +73,7 @@ def configure(opt):
 
     args = list()
     args.append(trans_module)
+    args.append('prelu') if opt.G_act is 'prelu' else None
 
     kwargs = dict()
     kwargs.update({'RB': opt.n_RB})
@@ -87,28 +95,31 @@ def configure(opt):
     log_path = os.path.join('./checkpoints/', dataset_name, 'Model', model_name, 'opt.txt')
 
     if opt.debug:
-        opt.display_freq = 1
+        opt.display_freq = 100
         opt.n_epochs = 4
-        opt.report_freq = 1
-        opt.save_freq = 4
+        opt.n_epochs_per_lod = 1
+        opt.report_freq = 5
+        opt.save_freq = 1000000000
 
     if os.path.isfile(log_path) and not opt.debug:
         permission = input(
             "{} log already exists. Do you really want to overwrite this log? Y/N. : ".format(model_name + '/opt'))
         if permission == 'Y':
-            args = vars(opt)
-            with open(log_path, 'wt') as log:
-                log.write('-' * 50 + 'Options' + '-' * 50 + '\n')
-                print('-' * 50 + 'Options' + '-' * 50)
-                for k, v in sorted(args.items()):
-                    log.write('{}: {}\n'.format(str(k), str(v)))
-                    print("{}: {}".format(str(k), str(v)))
-                log.write('-' * 50 + 'End' + '-' * 50)
-                print('-' * 50 + 'End' + '-' * 50)
-                log.close()
+            pass
 
         else:
             raise NotImplementedError("Please check {}".format(log_path))
+
+    args = vars(opt)
+    with open(log_path, 'wt') as log:
+        log.write('-' * 50 + 'Options' + '-' * 50 + '\n')
+        print('-' * 50 + 'Options' + '-' * 50)
+        for k, v in sorted(args.items()):
+            log.write('{}: {}\n'.format(str(k), str(v)))
+            print("{}: {}".format(str(k), str(v)))
+        log.write('-' * 50 + 'End' + '-' * 50)
+        print('-' * 50 + 'End' + '-' * 50)
+        log.close()
 
 
 def make_dir(dataset_name=None, model_name=None, type='checkpoints'):

@@ -82,7 +82,7 @@ def configure(opt):
 
     kwargs = dict()
     kwargs.update({'prog': progression}) if progression else None
-    kwargs.update({'RG': opt.n_RG, }) if trans_module == 'RCAB' else None
+    kwargs.update({'G': opt.n_groups, 'C': opt.rir_ch}) if trans_module == 'RIR' else None
     kwargs.update({'L': opt.n_dense_layers, 'K': opt.growth_rate}) if trans_module in ['RDB', 'DB'] else None
     kwargs.update({'C_down': opt.n_downsample_C, 'RB_C': opt.n_RB_C}) if opt.Res_C else None
 

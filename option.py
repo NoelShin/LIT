@@ -7,34 +7,41 @@ class BaseOption(object):
         self.parser = argparse.ArgumentParser()
 
         self.parser.add_argument('--debug', action='store_true', default=False, help='for checking code')
-        self.parser.add_argument('--gpu_ids', type=int, default=1, help='gpu number. If -1, use cpu')
+        self.parser.add_argument('--gpu_ids', type=int, default=2, help='gpu number. If -1, use cpu')
 
         self.parser.add_argument('--batch_size', type=int, default=1, help='the number of batch_size')
+        self.parser.add_argument('--C_condition', action='store_true', default=True, help='whether to condition Critic')
         self.parser.add_argument('--dataset_name', type=str, default='Cityscapes', help='[Cityscapes, Custom]')
+        self.parser.add_argument('--fan_mode', type=str, default='fan_in',
+                                 help='He init keyword. Choose among [fan_in, fan_out]')
+        self.parser.add_argument('--flip', action='store_true', default=True, help='switch for flip input data')
+        self.parser.add_argument('--G_act', type=str, default='relu', help='which activation to use in Generator')
         self.parser.add_argument('--GAN_type', type=str, default='LSGAN', help='[LSGAN, WGAN_GP]')
-        self.parser.add_argument('--image_height', type=int, default=1024, help='[512, 1024]')
+        self.parser.add_argument('--image_height', type=int, default=512, help='[512, 1024]')
         self.parser.add_argument('--image_mode', type=str, default='png', help='extension for saving image')
+        self.parser.add_argument('--init_type', type=str, default='normal',
+                                 help='Init type. Choose among [kaiming_normal, normal]')
         self.parser.add_argument('--negative_slope', type=float, default=0.2, help='inclination for negative part')
-        self.parser.add_argument('--max_ch_G', type=int, default=2 ** 9, help='max nb of channels in generator')
+        self.parser.add_argument('--max_ch_G', type=int, default=2 ** 10, help='max nb of channels in generator')
         self.parser.add_argument('--max_ch_C', type=int, default=2 ** 9, help='max nb of channels in critic')
-
+        self.parser.add_argument('--norm_type', type=str, default='InstanceNorm2d',
+                                 help='[BatchNorm2d, InstanceNorm2d, PixelNorm]')
         # about RCAN
-        self.parser.add_argument('--n_RG', type=int, default=6, help='the number of residual groups')
+        self.parser.add_argument('--n_RG', type=int, default=9, help='the number of residual groups')
         self.parser.add_argument('--reduction_rate', type=int, default=16)
 
         # about RDN
         self.parser.add_argument('--efficient', action='store_true', default=True)
-        self.parser.add_argument('--growth_rate', type=int, default=128)
-        self.parser.add_argument('--n_dense_layers', type=int, default=16, help='how many dense layers in a RDB')
-        self.parser.add_argument('--n_RB', type=int, default=16, help='the number of residual blocks')
+        self.parser.add_argument('--growth_rate', type=int, default=256)
+        self.parser.add_argument('--n_dense_layers', type=int, default=4, help='how many dense layers in a RDB')
+        self.parser.add_argument('--n_blocks', type=int, default=28, help='the number of residual blocks')
 
-        self.parser.add_argument('--trans_module', type=str, default='RDB', help='[RB, RCAB, RDB, RDCAB]')
+        self.parser.add_argument('--trans_module', type=str, default='DB', help='[RB, DB, RDB]')
 
         # about architecture
         self.parser.add_argument('--FM_lambda', type=int, default=10, help='weight for feature matching loss')
-        self.parser.add_argument('--pre_activation', action='store_true', default=True)
-        self.parser.add_argument('--Res_C', action='store_true', default=True)
-        self.parser.add_argument('--progression', action='store_true', default=True,
+        self.parser.add_argument('--Res_C', action='store_true', default=False)
+        self.parser.add_argument('--progression', action='store_true', default=False,
                                  help='if you want progressive training')
         self.parser.add_argument('--n_downsample_C', type=int, default=3)
         self.parser.add_argument('--n_enhance_blocks', type=int, default=2,
@@ -64,27 +71,21 @@ class TrainOption(BaseOption):
         self.parser.add_argument('--display_freq', type=int, default=100)
         self.parser.add_argument('--C_act', type=str, default='leaky_relu', help='which activation to use in Critic')
         self.parser.add_argument('--C_act_negative_slope', type=float, default=0.2, help='negative slope of C_act')
-        self.parser.add_argument('--C_condition', action='store_true', default=True, help='whether to condition Critic')
         self.parser.add_argument('--C_norm', action='store_true', default=True,
                                  help='whether to use norm layer in Critic')
         self.parser.add_argument('--epoch_decay', type=int, default=100, help='when to start decay the lr')
         self.parser.add_argument('--eps', type=float, default=1e-8)
         self.parser.add_argument('--FM', action='store_true', default=True, help='switch for feature matching loss')
         self.parser.add_argument('--FM_criterion', type=str, default='L1', help='[L1, MSE]')
-        self.parser.add_argument('--flip', action='store_true', default=True, help='switch for flip input data')
-        self.parser.add_argument('--fan_mode', type=str, default='fan_in',
-                                 help='He init keyword. Choose among [fan_in, fan_out]')
-        self.parser.add_argument('--G_act', type=str, default='relu', help='which activation to use in Generator')
+
         self.parser.add_argument('--G_act_negative_slope', type=float, default=0.0, help='negative slope of G_act')
         self.parser.add_argument('--GP', action='store_true', default=False, help='if you want to add GP for GANs')
         self.parser.add_argument('--GP_lambda', type=int, default=50, help='weight for gradient penalty')
-        self.parser.add_argument('--init_type', type=str, default='normal',
-                                 help='Init type. Choose among [kaiming_normal, normal]')
+
         self.parser.add_argument('--lr', type=float, default=0.0002)
         self.parser.add_argument('--n_epochs', type=int, default=200)
         self.parser.add_argument('--n_epochs_per_lod', type=int, default=40)
-        self.parser.add_argument('--norm_type', type=str, default='InstanceNorm2d',
-                                 help='[BatchNorm2d, InstanceNorm2d, PixelNorm]')
+
         self.parser.add_argument('--report_freq', type=int, default=5)
         self.parser.add_argument('--save_freq', type=int, default=29750)
         self.parser.add_argument('--shuffle', action='store_true', default=True,

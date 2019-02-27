@@ -43,13 +43,34 @@ class ResidualChannelAttentionBlock(nn.Module):
         return x + getattr(self, 'ResidualChannelAttentionBlock')(x)
 
 
+class BasicResidualBlock(nn.Module):
+    def __init__(self, n_ch, kernel_size=3):
+        super(BasicResidualBlock, self).__init__()
+        ps = kernel_size // 2
+        block = [nn.ReLU(inplace=True), nn.ReflectionPad2d(ps), nn.Conv2d(n_ch, n_ch, kernel_size),
+                 nn.InstanceNorm2d(n_ch)]
+        self.add_module('BasicResidualBlock', nn.Sequential(*block))
+
+    def forward(self, x):
+        return x + getattr(self, 'BasicResidualBlock')(x)
+
+
 class ResidualGroup(nn.Module):
-    def __init__(self, n_blocks, n_ch, reduction_rate, kernel_size=3):
+    def __init__(self, n_blocks, n_ch):
         super(ResidualGroup, self).__init__()
-        group = [ResidualChannelAttentionBlock(n_ch, reduction_rate) for _ in range(n_blocks)]
-        group += [nn.ReflectionPad2d(1), nn.Conv2d(n_ch, n_ch, kernel_size), nn.InstanceNorm2d(n_ch),
-                  nn.ReLU(inplace=True)]
+        group = [BasicResidualBlock(n_ch) for _ in range(n_blocks)]
         self.group = nn.Sequential(*group)
 
     def forward(self, x):
         return x + self.group(x)
+
+
+class ResidualInResidualNetwork(nn.Module):
+    def __init__(self, n_groups, n_blocks, n_ch):
+        super(ResidualInResidualNetwork, self).__init__()
+        network = [ResidualGroup(n_blocks, n_ch) for _ in range(n_groups)]
+        self.network = nn.Sequential(*network)
+        self.add_module('StyleExpansion', nn.Conv2d(n_ch, 1024, kernel_size=1))
+
+    def forward(self, x):
+        return getattr(self,'StyleExpansion')(self.network(x))

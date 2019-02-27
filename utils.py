@@ -1,10 +1,15 @@
 import os
 import torch
+import torch.nn as nn
 import numpy as np
 from PIL import Image
 
 
 def configure(opt):
+    image_height = opt.image_height
+    is_train = opt.is_train
+    trans_module = opt.trans_module
+    progression = opt.progression
     opt.USE_CUDA = True if opt.gpu_ids != -1 else False
     opt.format = 'png'
     opt.n_df = 64
@@ -12,47 +17,49 @@ def configure(opt):
     dataset_name = opt.dataset_name
     if dataset_name == 'Cityscapes':
         opt.n_data = 2975
+        opt.input_ch = 36 if opt.use_boundary_map else 35
         opt.output_ch = 3
 
-        if opt.use_boundary_map:
-            opt.input_ch = 36
-        else:
-            opt.input_ch = 35
-
-        if opt.image_height == 512:
+        if image_height == 512:
             opt.image_size = (512, 1024)
             opt.n_downsample = 4
             opt.n_df = 64
             opt.n_gf = 64
 
-        elif opt.image_height == 1024:
+        elif image_height == 1024:
             opt.image_size = (1024, 2048)
             opt.n_downsample = 5
             opt.n_df = 16
             opt.n_gf = 16
         else:
-            raise NotImplementedError("Invalid image_height: {}".format(opt.image_height))
+            raise NotImplementedError("Invalid image_height: {}".format(image_height))
 
-    elif dataset_name == 'Custom':
+    elif dataset_name == 'NYU':
+        opt.n_data = 1200
+        opt.output_ch = 3
+        opt.input_ch = 896 if opt.use_boundary_map else 895
+        opt.image_size = (561, 427)
+        opt.n_downsample = 4
+        opt.n_df = 64
+        opt.n_gf = 64
+
+    else:
         opt.input_ch = 1
         opt.output_ch = 1
 
-        if opt.image_height == 512:
+        if image_height == 512:
             opt.image_size = (512, 512)
             opt.n_downsample = 4
             opt.n_df = 64
             opt.n_gf = 64
 
-        elif opt.image_height == 1024:
+        elif image_height == 1024:
             opt.image_size = (1024, 1024)
             opt.n_downsample = 5
             opt.n_df = 32
             opt.n_gf = 32
 
-    else:
-        raise NotImplementedError("Please check dataset_name {}. It should be in ['Cityscapes', 'Custom'].".format(dataset_name))
-
-    if opt.progression:
+    if progression:
         opt.beta1, opt.beta2 = (0.0, 0.9)
         opt.n_C = 1
         opt.patch_size = 16
@@ -63,36 +70,30 @@ def configure(opt):
         opt.beta1, opt.beta2 = (0.5, 0.9)
         opt.n_C = 1 if opt.Res_C else 2
         opt.patch_size = 70
-        opt.VGG =True
+        opt.VGG = True
 
     opt.min_image_size = (2 ** (np.log2(opt.image_size[0]) - opt.n_downsample),
                           2 ** (np.log2(opt.image_size[1]) - opt.n_downsample))
 
-    trans_module = opt.trans_module
-    progression = opt.progression
-
     args = list()
     args.append(trans_module)
+    args.append(opt.n_blocks)
     args.append('prelu') if opt.G_act is 'prelu' else None
 
     kwargs = dict()
-    kwargs.update({'RB': opt.n_RB})
     kwargs.update({'prog': progression}) if progression else None
     kwargs.update({'RG': opt.n_RG, }) if trans_module == 'RCAB' else None
-    kwargs.update({'L': opt.n_dense_layers, 'K': opt.growth_rate}) if trans_module == ('RDB' or 'RCADB') else None
+    kwargs.update({'L': opt.n_dense_layers, 'K': opt.growth_rate}) if trans_module in ['RDB', 'DB'] else None
     kwargs.update({'C_down': opt.n_downsample_C, 'RB_C': opt.n_RB_C}) if opt.Res_C else None
 
     model_name = model_namer(*args, **kwargs)
-    make_dir(dataset_name, model_name, type='checkpoints')
+    make_dir(dataset_name, model_name, is_train=is_train)
 
-    if opt.is_train:
-        opt.image_dir = os.path.join('./checkpoints', dataset_name, 'Image/Training', model_name)
+    opt.image_dir = os.path.join('./checkpoints', dataset_name, model_name,  'Image/{}'.
+                                 format('Training' if is_train else 'Test'))
 
-    else:
-        opt.image_dir = os.path.join('./checkpoints', dataset_name, 'Image/Test', model_name)
-
-    opt.model_dir = os.path.join('./checkpoints', dataset_name, 'Model', model_name)
-    log_path = os.path.join('./checkpoints/', dataset_name, 'Model', model_name, 'opt.txt')
+    opt.model_dir = os.path.join('./checkpoints', dataset_name, model_name, 'Model')
+    log_path = os.path.join(opt.model_dir, 'opt.txt')
 
     if opt.debug:
         opt.display_freq = 100
@@ -101,7 +102,7 @@ def configure(opt):
         opt.report_freq = 5
         opt.save_freq = 1000000000
 
-    if os.path.isfile(log_path) and not opt.debug:
+    if os.path.isfile(log_path) and not opt.debug and is_train:
         permission = input(
             "{} log already exists. Do you really want to overwrite this log? Y/N. : ".format(model_name + '/opt'))
         if permission == 'Y':
@@ -122,19 +123,29 @@ def configure(opt):
         log.close()
 
 
-def make_dir(dataset_name=None, model_name=None, type='checkpoints'):
-    assert dataset_name in ['Cityscapes']
-    if type == 'checkpoints':
-        assert model_name, "model_name keyword should be specified for type='checkpoints'"
-        os.makedirs(os.path.join('./checkpoints', dataset_name, 'Image', 'Training', model_name), exist_ok=True)
-        os.makedirs(os.path.join('./checkpoints', dataset_name, 'Image', 'Test', model_name), exist_ok=True)
-        os.makedirs(os.path.join('./checkpoints', dataset_name, 'Model', model_name), exist_ok=True)
+def init_weights(module, type='kaiming_normal', mode='fan_in', negative_slope=0.2, nonlinearity='leaky_relu'):
+    if isinstance(module, nn.Conv2d) or isinstance(module, nn.ConvTranspose2d):
+        if type == 'kaiming_normal':
+            nn.init.kaiming_normal_(module.weight.detach(), a=negative_slope, mode=mode, nonlinearity=nonlinearity)
+
+        elif type == 'normal':
+            nn.init.normal_(module.weight.detach(), 0.0, 0.02)
+
+        else:
+            raise NotImplementedError("Weight init type {} is not valid.".format(type))
 
     else:
-        """
-        for other type of directory
-        """
         pass
+
+
+def make_dir(dataset_name=None, model_name=None, is_train=False):
+    assert dataset_name in ['Cityscapes']
+    assert model_name, "model_name keyword should be specified for type='checkpoints'"
+    if is_train:
+        os.makedirs(os.path.join('./checkpoints', dataset_name, model_name, 'Image', 'Training'), exist_ok=True)
+        os.makedirs(os.path.join('./checkpoints', dataset_name, model_name, 'Model'), exist_ok=True)
+    else:
+        os.makedirs(os.path.join('./checkpoints', dataset_name, model_name, 'Image', 'Test'), exist_ok=True)
 
 
 def model_namer(*elements, **k_elements):
@@ -166,12 +177,14 @@ class Manager(object):
         else:
             raise NotImplementedError
 
-        self.display_freq = opt.display_freq
         self.image_dir = opt.image_dir
         self.image_mode = opt.image_mode
-        self.progression = opt.progression
-        self.report_freq = opt.report_freq
-        self.save_freq = opt.save_freq
+
+        if opt.is_train:
+            self.display_freq = opt.display_freq
+            self.progression = opt.progression
+            self.report_freq = opt.report_freq
+            self.save_freq = opt.save_freq
 
     def report_loss(self, package):
         if self.GAN_type == 'LSGAN':
@@ -202,7 +215,6 @@ class Manager(object):
 
     def tensor2image(self, image_tensor):
         np_image = image_tensor[0].cpu().float().numpy()
-        # assert np_image.shape[0] in [1, 3], print("The channel is ", np_image.shape)
         if len(np_image.shape) == 3:
             np_image = np.transpose(np_image, (1, 2, 0))  # HWC
         else:

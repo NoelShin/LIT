@@ -7,7 +7,7 @@ class BaseOption(object):
         self.parser = argparse.ArgumentParser()
 
         self.parser.add_argument('--debug', action='store_true', default=False, help='for checking code')
-        self.parser.add_argument('--gpu_ids', type=int, default=2, help='gpu number. If -1, use cpu')
+        self.parser.add_argument('--gpu_ids', type=int, default=3, help='gpu number. If -1, use cpu')
 
         self.parser.add_argument('--batch_size', type=int, default=1, help='the number of batch_size')
         self.parser.add_argument('--C_condition', action='store_true', default=True, help='whether to condition Critic')
@@ -26,17 +26,18 @@ class BaseOption(object):
         self.parser.add_argument('--max_ch_C', type=int, default=2 ** 9, help='max nb of channels in critic')
         self.parser.add_argument('--norm_type', type=str, default='InstanceNorm2d',
                                  help='[BatchNorm2d, InstanceNorm2d, PixelNorm]')
-        # about RCAN
-        self.parser.add_argument('--n_RG', type=int, default=9, help='the number of residual groups')
-        self.parser.add_argument('--reduction_rate', type=int, default=16)
 
-        # about RDN
+        self.parser.add_argument('--trans_module', type=str, default='RIR', help='[RB, DB, RDB, RIR]')
+        self.parser.add_argument('--n_blocks', type=int, default=18, help='the number of residual blocks')
+
+        # about RIR
+        self.parser.add_argument('--n_groups', type=int, default=16, help='the number of residual groups')
+        self.parser.add_argument('--rir_ch', type=int, default=256)
+
+        # about DB
         self.parser.add_argument('--efficient', action='store_true', default=True)
         self.parser.add_argument('--growth_rate', type=int, default=256)
         self.parser.add_argument('--n_dense_layers', type=int, default=4, help='how many dense layers in a RDB')
-        self.parser.add_argument('--n_blocks', type=int, default=28, help='the number of residual blocks')
-
-        self.parser.add_argument('--trans_module', type=str, default='DB', help='[RB, DB, RDB]')
 
         # about architecture
         self.parser.add_argument('--FM_lambda', type=int, default=10, help='weight for feature matching loss')
@@ -54,6 +55,7 @@ class BaseOption(object):
         self.parser.add_argument('--tanh', action='store_true', default=True, help='if you want to use tanh for RGB')
         self.parser.add_argument('--use_boundary_map', action='store_true', default=True,
                                  help='if you want to use boundary map')
+        self.parser.add_argument('--reduction_rate', type=int, default=16)
 
     def parse(self):
         self.opt = self.parser.parse_args()

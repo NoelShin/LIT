@@ -1,29 +1,20 @@
 if __name__ == '__main__':
     import os
-
-    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    from functools import partial
     import torch
     import numpy as np
     from option import TrainOption
     from pipeline import CustomDataset
-    from utils import Manager, update_lr
+    from utils import init_weights, Manager, update_lr
     import datetime
-
-    torch.backends.cudnn.benchmark = True
-
     opt = TrainOption().parse()
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
     if opt.progression:
         from models import ProgressiveGenerator as Generator
         from models import ProgressivePatchCritic as Adversarial
 
     else:
         from models import Generator
-
-        if opt.Res_C:
-            from models import ResidualPatchCritic as Adversarial
-        else:
-            from models import Critic as Adversarial
+        from models import Critic as Adversarial
 
     if opt.GAN_type == 'LSGAN':
         from loss import LSGANLoss as Loss
@@ -31,9 +22,19 @@ if __name__ == '__main__':
         from loss import WGANGPLoss as Loss
 
     USE_CUDA = opt.USE_CUDA
+    torch.backends.cudnn.benchmark = True
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
+    device = torch.device('cuda' if USE_CUDA else 'cpu', 0)
 
-    G = Generator(opt)
-    A = Adversarial(opt)
+    G = Generator(opt).apply(partial(init_weights, type=opt.init_type, mode=opt.fan_mode,
+                                     negative_slope=opt.negative_slope, nonlinearity=opt.G_act))
+    G.to(device)
+    print(G, "the number of G parameters: ", sum(p.numel() for p in G.parameters() if p.requires_grad))
+
+    A = Adversarial(opt).apply(partial(init_weights, type=opt.init_type, mode=opt.fan_mode,
+                                       negative_slope=opt.negative_slope, nonlinearity=opt.C_act))
+    A.to(device)
+    print(A, "the number of A parameters: ", sum(p.numel() for p in A.parameters() if p.requires_grad))
 
     criterion = Loss(opt)
 
@@ -66,7 +67,6 @@ if __name__ == '__main__':
                     level_in = np.clip(level_in, level, level + 1.0)
 
                     if USE_CUDA:
-                        device = torch.device('cuda', 0)
                         for k, v in data_dict.items():
                             data_dict.update({k: v.to(device)})
 
@@ -102,7 +102,6 @@ if __name__ == '__main__':
                 current_step += 1
 
                 if USE_CUDA:
-                    device = torch.device('cuda', 0)
                     for k, v in data_dict.items():
                         data_dict.update({k: v.to(device)})
 

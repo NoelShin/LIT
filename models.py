@@ -25,7 +25,6 @@ class Generator(nn.Module):
         norm = nn.InstanceNorm2d
         pad = nn.ReflectionPad2d
 
-        growth_rate = opt.growth_rate
         input_ch = opt.input_ch
         max_ch = opt.max_ch_G
         n_ch = opt.n_gf
@@ -41,8 +40,14 @@ class Generator(nn.Module):
                             norm(min(2 * n_ch, max_ch)), act]
             n_ch *= 2
 
-        down_blocks += [nn.Conv2d(min(n_ch, max_ch), growth_rate, kernel_size=1)] if trans_module == 'DB' else []
-        self.translator = self.get_trans_network(opt, growth_rate if trans_module == 'DB' else n_ch)
+        if trans_module == 'DB':
+            down_blocks += [nn.Conv2d(min(n_ch, max_ch), opt.growth_rate, kernel_size=1), norm(opt.growth_rate)]
+            self.translator = self.get_trans_network(opt, opt.growth_rate)
+        elif trans_module == 'RIR':
+            down_blocks += [nn.Conv2d(min(n_ch, max_ch), opt.rir_ch, kernel_size=1), norm(opt.rir_ch)]
+            self.translator = self.get_trans_network(opt, opt.rir_ch)
+        else:
+            self.translator = self.get_trans_network(opt, min(n_ch, max_ch))
 
         for _ in range(n_down):
             up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
@@ -60,15 +65,18 @@ class Generator(nn.Module):
     @staticmethod
     def get_trans_network(opt, n_ch):
         trans_module = opt.trans_module
-        if trans_module == 'RB':
+        if trans_module == 'DB':
+            from networks.dense_modules import DenseNetwork
+            network = DenseNetwork(opt.n_blocks, n_ch, opt.growth_rate, opt.n_dense_layers, efficient=opt.efficient)
+        elif trans_module == 'RB':
             from networks.residual_modules import ResidualNetwork
             network = ResidualNetwork(opt.n_blocks, n_ch)
         elif trans_module == 'RDB':
             from networks.residual_dense_modules import ResidualDenseNetwork
             network = ResidualDenseNetwork(opt.n_blocks, n_ch, opt.growth_rate, opt.n_dense_layers)
-        elif trans_module == 'DB':
-            from networks.dense_modules import DenseNetwork
-            network = DenseNetwork(opt.n_blocks, n_ch, opt.growth_rate, opt.n_dense_layers, efficient=opt.efficient)
+        elif trans_module == 'RIR':
+            from networks.residual_modules import ResidualInResidualNetwork
+            network = ResidualInResidualNetwork(opt.n_groups, opt.n_blocks, n_ch)
         else:
             raise NotImplementedError
         return network

@@ -30,6 +30,7 @@ if __name__ == '__main__':
                                      negative_slope=opt.negative_slope, nonlinearity=opt.G_act))
     G.to(device)
     print(G, "the number of G parameters: ", sum(p.numel() for p in G.parameters() if p.requires_grad))
+    G.translator.StyleExpansion.weight.detach().fill_(1.0)
 
     A = Adversarial(opt).apply(partial(init_weights, type=opt.init_type, mode=opt.fan_mode,
                                        negative_slope=opt.negative_slope, nonlinearity=opt.C_act))
@@ -96,6 +97,7 @@ if __name__ == '__main__':
                                                   num_workers=opt.n_workers,
                                                   shuffle=opt.shuffle)
         for epoch in range(opt.n_epochs):
+            manager.save_weight_figure(G.translator.StyleExpansion.weight.detach(), epoch) if epoch == 0 else None
             package.update({'Epoch': epoch + 1})
             for _, data_dict in enumerate(data_loader):
                 time = datetime.datetime.now()
@@ -117,9 +119,9 @@ if __name__ == '__main__':
                 package.update({'Current_step': current_step, 'running_time': datetime.datetime.now() - time})
 
                 manager(package)
-
                 if opt.debug:
                     break
+            manager.save_weight_figure(G.translator.StyleExpansion.weight.detach(), epoch + 1)
 
             if epoch > opt.epoch_decay:
                 lr = update_lr(lr, opt.n_epochs - opt.epoch_decay, A_optim, G_optim)

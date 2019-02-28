@@ -1,8 +1,10 @@
 import os
+import copy
 import torch
 import torch.nn as nn
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 
 
 def configure(opt):
@@ -78,6 +80,8 @@ def configure(opt):
     args = list()
     args.append(trans_module)
     args.append(opt.n_blocks)
+    args.append('GFF')
+    args.append('init')
     args.append('prelu') if opt.G_act is 'prelu' else None
 
     kwargs = dict()
@@ -165,6 +169,12 @@ class Manager(object):
         self.GAN_type = opt.GAN_type
         self.model_dir = opt.model_dir
         self.log = os.path.join(self.model_dir, 'log.txt')
+        self.n_blocks = opt.n_blocks
+        self.n_ch_trans = 1024
+        self.weight_log = os.path.join(self.model_dir, 'StyleExpansionWeight.txt')
+
+        with open(self.weight_log, 'wt') as log:
+            log.write('Epoch, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
 
         if self.GAN_type == 'LSGAN':
             with open(self.log, 'wt') as log:
@@ -246,6 +256,43 @@ class Manager(object):
             torch.save(package['A_state_dict'], path_A)
             torch.save(package['G_state_dict'], path_G)
 
+    def save_weight_figure(self, weight,  epoch):
+        mean_arr = [weight[:, 0 + i * self.n_ch_trans:(i + 1) * self.n_ch_trans, :, :].mean()
+                    for i in range(self.n_blocks + 1)]
+        mean_arr = np.array(mean_arr)
+        delta = mean_arr.max() - mean_arr.min()
+        # print("{}, {}\n".format(epoch, mean_arr))
+        plt.figure(figsize=[9.6, 7.2])
+        plt.axhline(y=1.0, linestyle='--', color='k')
+        plt.plot(range(len(mean_arr)), mean_arr, linestyle='-', marker='^', color='r')
+        plt.axis([-1, 10, 1 - delta - 5e-5, 1 + delta + 5e-5])
+        plt.xlabel('Residual index')
+        plt.xticks(range(len(mean_arr)))
+        plt.ylabel('Average weight per residual block')
+        plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_weights.png'.format(epoch)))
+        plt.close()
+
+        height_arr = mean_arr - 1.0 + 1e-8
+        size = abs(height_arr).sum()
+        fraction_arr = height_arr / size
+        delta = fraction_arr.max() - fraction_arr.min()
+        plt.figure()
+        plt.xlabel('Residual index')
+        plt.ylabel('Fraction over final feature')
+        plt.xticks(range(len(fraction_arr)))
+        plt.axhline(y=0, linestyle='--', color='k')
+        plt.axis([-1, 10, -delta, delta])
+        plt.plot(range(len(fraction_arr)), fraction_arr, linestyle='none', marker='_', color='b')
+        for i in range(len(fraction_arr)):
+            plt.vlines(i, min(0, fraction_arr[i]), max(0, fraction_arr[i]), linestyles='-', colors='b')
+        plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_fractions.png'.format(epoch)))
+        plt.close()
+        with open(self.weight_log, 'a') as f:
+            f.write("{}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}},"
+                    " {:.{prec}}, {:.{prec}}\n".format(epoch, *mean_arr, prec=6))
+            f.close()
+        del mean_arr
+
     def __call__(self, package):
         if package['Current_step'] % self.display_freq == 0:
             self.save(package, image=True)
@@ -270,3 +317,5 @@ def update_lr(old_lr, n_epoch_decay, D_optim, G_optim):
     print("Learning rate has been updated from {} to {}.".format(old_lr, new_lr))
 
     return new_lr
+
+

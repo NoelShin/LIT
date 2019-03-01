@@ -82,6 +82,7 @@ def configure(opt):
     args.append(opt.n_blocks)
     args.append('GFF')
     args.append('init')
+    args.append('0.0001')
     args.append('prelu') if opt.G_act is 'prelu' else None
 
     kwargs = dict()
@@ -256,26 +257,26 @@ class Manager(object):
             torch.save(package['A_state_dict'], path_A)
             torch.save(package['G_state_dict'], path_G)
 
-    def save_weight_figure(self, weight,  epoch):
+    def save_weight_figure(self, weight,  epoch, init_weight):
         mean_arr = [weight[:, 0 + i * self.n_ch_trans:(i + 1) * self.n_ch_trans, :, :].mean()
                     for i in range(self.n_blocks + 1)]
         mean_arr = np.array(mean_arr)
-        delta = mean_arr.max() - mean_arr.min()
+        delta = max(abs(mean_arr.max()), abs(mean_arr.min()))
         # print("{}, {}\n".format(epoch, mean_arr))
         plt.figure(figsize=[9.6, 7.2])
-        plt.axhline(y=1.0, linestyle='--', color='k')
+        plt.axhline(y=init_weight, linestyle='--', color='k')
         plt.plot(range(len(mean_arr)), mean_arr, linestyle='-', marker='^', color='r')
-        plt.axis([-1, 10, 1 - delta - 5e-5, 1 + delta + 5e-5])
+        plt.axis([-1, 10, init_weight - delta - 5e-5, init_weight + delta + 5e-5])
         plt.xlabel('Residual index')
         plt.xticks(range(len(mean_arr)))
         plt.ylabel('Average weight per residual block')
         plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_weights.png'.format(epoch)))
         plt.close()
 
-        height_arr = mean_arr - 1.0 + 1e-8
+        height_arr = mean_arr - init_weight + 1e-8
         size = abs(height_arr).sum()
         fraction_arr = height_arr / size
-        delta = fraction_arr.max() - fraction_arr.min()
+        delta = max(abs(fraction_arr.max()), abs(fraction_arr.min()))
         plt.figure()
         plt.xlabel('Residual index')
         plt.ylabel('Fraction over final feature')
@@ -317,5 +318,3 @@ def update_lr(old_lr, n_epoch_decay, D_optim, G_optim):
     print("Learning rate has been updated from {} to {}.".format(old_lr, new_lr))
 
     return new_lr
-
-

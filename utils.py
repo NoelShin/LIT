@@ -266,23 +266,22 @@ class Manager(object):
         plt.figure(figsize=[9.6, 7.2])
         plt.axhline(y=init_weight, linestyle='--', color='k')
         plt.plot(range(len(mean_arr)), mean_arr, linestyle='-', marker='^', color='r')
-        plt.axis([-1, 10, init_weight - delta - 5e-5, init_weight + delta + 5e-5])
+        plt.axis([-1, 10, init_weight - delta * 1.2, init_weight + delta * 1.2])
         plt.xlabel('Residual index')
         plt.xticks(range(len(mean_arr)))
         plt.ylabel('Average weight per residual block')
         plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_weights.png'.format(epoch)))
         plt.close()
 
-        height_arr = mean_arr - init_weight + 1e-8
-        size = abs(height_arr).sum()
-        fraction_arr = height_arr / size
+        size = abs(mean_arr).sum()
+        fraction_arr = mean_arr / size
         delta = max(abs(fraction_arr.max()), abs(fraction_arr.min()))
         plt.figure()
         plt.xlabel('Residual index')
         plt.ylabel('Fraction over final feature')
         plt.xticks(range(len(fraction_arr)))
         plt.axhline(y=0, linestyle='--', color='k')
-        plt.axis([-1, 10, -delta, delta])
+        plt.axis([-1, 10, -delta * 1.2, delta * 1.2])
         plt.plot(range(len(fraction_arr)), fraction_arr, linestyle='none', marker='_', color='b')
         for i in range(len(fraction_arr)):
             plt.vlines(i, min(0, fraction_arr[i]), max(0, fraction_arr[i]), linestyles='-', colors='b')

@@ -80,9 +80,10 @@ def configure(opt):
     args = list()
     args.append(trans_module)
     args.append(opt.n_blocks)
-    args.append('GFF')
-    args.append('init')
-    args.append('0.0001')
+    # args.append('GFF')
+    args.append('LR')
+    args.append('1.0')
+    # args.append('0.0001')
     args.append('prelu') if opt.G_act is 'prelu' else None
 
     kwargs = dict()
@@ -172,10 +173,14 @@ class Manager(object):
         self.log = os.path.join(self.model_dir, 'log.txt')
         self.n_blocks = opt.n_blocks
         self.n_ch_trans = 1024
-        self.weight_log = os.path.join(self.model_dir, 'StyleExpansionWeight.txt')
+        self.signal_log = os.path.join(self.model_dir, 'ResidualSignals.txt')
+        self.weight_log = os.path.join(self.model_dir, 'ResidualWeights.txt')
+
+        with open(self.signal_log, 'wt') as log:
+            log.write('Epoch, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
 
         with open(self.weight_log, 'wt') as log:
-            log.write('Epoch, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
+            log.write('Epoch, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
 
         if self.GAN_type == 'LSGAN':
             with open(self.log, 'wt') as log:
@@ -257,41 +262,54 @@ class Manager(object):
             torch.save(package['A_state_dict'], path_A)
             torch.save(package['G_state_dict'], path_G)
 
-    def save_weight_figure(self, weight,  epoch, init_weight):
-        mean_arr = [weight[:, 0 + i * self.n_ch_trans:(i + 1) * self.n_ch_trans, :, :].mean()
-                    for i in range(self.n_blocks + 1)]
-        mean_arr = np.array(mean_arr)
-        delta = max(abs(mean_arr.max()), abs(mean_arr.min()))
+    def save_signal_figure(self, signals, epoch):
+        plt.figure(figsize=[9.6, 7.2])
+        plt.plot(range(len(signals)), signals, linestyle='--', color='k', marke='x')
+        plt.axis([-1, len(signals), signals.min() * 0.8, signals.max() * 1.2])
+        plt.xlabel('Residual index')
+        plt.xticks(range(len(signals)))
+        plt.ylabel('Signal per residual block')
+        plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_signals.png'.format(epoch)))
+        plt.close()
+        with open(self.signal_log, 'a') as f:
+            f.write("{}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}},"
+                    "{:.{prec}}, {:.{prec}}\n".format(epoch, *signals, prec=6))
+            f.close()
+
+    def save_weight_figure(self, weight,  epoch, init_weight=1.0):
+        weight = np.array(weight)
+        delta = max(abs(weight.max()), abs(weight.min()))
         # print("{}, {}\n".format(epoch, mean_arr))
         plt.figure(figsize=[9.6, 7.2])
         plt.axhline(y=init_weight, linestyle='--', color='k')
-        plt.plot(range(len(mean_arr)), mean_arr, linestyle='-', marker='^', color='r')
-        plt.axis([-1, 10, init_weight - delta * 1.2, init_weight + delta * 1.2])
+        plt.plot(range(1, len(weight) + 1), weight, linestyle='-', marker='^', color='r')
+        plt.axis([0, len(weight) + 1, 0, 2])
+        for i in range(len(20)):
+            plt.axhline(y=0.1 * i, linestyle='--', color='0.4')
         plt.xlabel('Residual index')
-        plt.xticks(range(len(mean_arr)))
-        plt.ylabel('Average weight per residual block')
+        plt.xticks(range(len(weight) + 1))
+        plt.ylabel('Weight per residual block')
         plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_weights.png'.format(epoch)))
         plt.close()
 
-        size = abs(mean_arr).sum()
-        fraction_arr = mean_arr / size
+        size = abs(weight).sum()
+        fraction_arr = weight / size
         delta = max(abs(fraction_arr.max()), abs(fraction_arr.min()))
-        plt.figure()
+        plt.figure(figsize=[9.6, 7.2])
         plt.xlabel('Residual index')
         plt.ylabel('Fraction over final feature')
-        plt.xticks(range(len(fraction_arr)))
+        plt.xticks(range(len(fraction_arr) + 1))
         plt.axhline(y=0, linestyle='--', color='k')
-        plt.axis([-1, 10, -delta * 1.2, delta * 1.2])
-        plt.plot(range(len(fraction_arr)), fraction_arr, linestyle='none', marker='_', color='b')
+        plt.axis([0, len(fraction_arr) + 1, -delta * 1.2, delta * 1.2])
+        plt.plot(range(1, len(fraction_arr) + 1), fraction_arr, linestyle=':', marker='_', color='b')
         for i in range(len(fraction_arr)):
-            plt.vlines(i, min(0, fraction_arr[i]), max(0, fraction_arr[i]), linestyles='-', colors='b')
+            plt.vlines(i + 1, min(0, fraction_arr[i]), max(0, fraction_arr[i]), linestyles='-', colors='b')
         plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_fractions.png'.format(epoch)))
         plt.close()
         with open(self.weight_log, 'a') as f:
             f.write("{}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}},"
-                    " {:.{prec}}, {:.{prec}}\n".format(epoch, *mean_arr, prec=6))
+                    " {:.{prec}}\n".format(epoch, *weight, prec=6))
             f.close()
-        del mean_arr
 
     def __call__(self, package):
         if package['Current_step'] % self.display_freq == 0:

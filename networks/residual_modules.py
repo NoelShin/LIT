@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 from .base_modules import ChannelAttentionLayer
 
 
@@ -11,9 +12,10 @@ class ResidualBlock(nn.Module):
                  nn.ReLU(inplace=True)]
         block += [nn.ReflectionPad2d(ps), nn.Conv2d(n_ch, n_ch, kernel_size), nn.InstanceNorm2d(n_ch)]
         self.add_module('ResidualBlock', nn.Sequential(*block))
+        setattr(self, 'ResidualWeight', nn.Parameter(torch.tensor(1.0)))
 
     def forward(self, x):
-        return getattr(self, 'ResidualBlock')(x)
+        return x + torch.mul(getattr(self, 'ResidualBlock')(x), getattr(self, 'ResidualWeight'))
 
 
 class ResidualNetwork(nn.Module):
@@ -23,7 +25,7 @@ class ResidualNetwork(nn.Module):
         # self.add_module('ResidualNetwork', nn.Sequential(*network))
         for i in range(n_blocks):
             self.add_module('ResidualBlock{}'.format(i), ResidualBlock(n_ch))
-        self.add_module('StyleExpansion', nn.Conv2d((n_blocks + 1) * n_ch, 1024, kernel_size=1, bias=False))
+
         self.n_blocks = n_blocks
 
     def forward(self, x):
@@ -31,7 +33,7 @@ class ResidualNetwork(nn.Module):
         intermediate = [x]
         for i in range(self.n_blocks):
             intermediate += [getattr(self, 'ResidualBlock{}'.format(i))(intermediate[-1])]
-        return getattr(self, 'StyleExpansion')(torch.cat(intermediate, dim=1))
+        return intermediate[-1], intermediate
 
 
 class ResidualChannelAttentionBlock(nn.Module):

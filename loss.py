@@ -120,7 +120,7 @@ class LSGANLoss(Loss):
         package = {}
 
         input = data_dict['input_tensor']
-        fake = G(x=input, level=level, level_in=level_in) if self.progression else G(input)
+        fake, residual_signals = G(x=input, level=level, level_in=level_in) if self.progression else G(input)
         target = data_dict['target_tensor']
 
         if self.condition:
@@ -174,7 +174,8 @@ class LSGANLoss(Loss):
             loss_G += self.FM_lambda * loss_VGG
 
         package.update({'A_loss': loss_C, 'G_loss': loss_G, 'generated_tensor': fake.detach(),
-                        'A_state_dict': C.state_dict(), 'G_state_dict': G.state_dict(), 'target_tensor': target})
+                        'A_state_dict': C.state_dict(), 'G_state_dict': G.state_dict(), 'target_tensor': target,
+                        'residual_signals': residual_signals})
 
         return package
 

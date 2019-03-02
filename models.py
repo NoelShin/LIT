@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision
+import numpy as np
 
 
 class Critic(nn.Module):
@@ -60,7 +61,10 @@ class Generator(nn.Module):
         self.up_blocks = nn.Sequential(*up_blocks)
 
     def forward(self, x):
-        return self.up_blocks(self.translator(self.down_blocks(x)))
+        result, residual_signals = self.translator(self.down_blocks(x))
+        for i in range(len(residual_signals)):
+            residual_signals[i] = residual_signals[i].detach().mean().cpu()
+        return self.up_blocks(result), np.array(residual_signals)
 
     @staticmethod
     def get_trans_network(opt, n_ch):

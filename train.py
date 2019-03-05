@@ -33,11 +33,15 @@ if __name__ == '__main__':
     # init_weight = 0.01 ** 2
 
     # G.translator.StyleExpansion.weight.detach().fill_(init_weight)
-    residual_weights = []
+    block_weights = []
     for i in range(opt.n_blocks):
-        getattr(getattr(G.translator, "ResidualBlock{}".format(i)), 'ResidualWeight').detach().fill_(1.0)
-        residual_weights += [getattr(getattr(G.translator, "ResidualBlock{}".format(i)), 'ResidualWeight').detach()]
-    residual_weights = np.array(residual_weights)
+        if opt.trans_module == 'RB':
+            getattr(getattr(G.translator, "ResidualBlock{}".format(i)), 'BlockWeight').detach().fill_(1.0)
+            block_weights += [getattr(getattr(G.translator, "ResidualBlock{}".format(i)), 'ResidualWeight').detach().cpu()]
+        # elif opt.trans_module == 'DB':
+        #    getattr(G.translator, 'BlockWeight{}'.format(i)).detach().fill_(1.0)
+        #    block_weights += [getattr(G.translator, "BlockWeight{}".format(i)).detach().cpu()]
+    # block_weights = np.array(block_weights)
 
     A = Adversarial(opt).apply(partial(init_weights, type=opt.init_type, mode=opt.fan_mode,
                                        negative_slope=opt.negative_slope, nonlinearity=opt.C_act))
@@ -104,9 +108,9 @@ if __name__ == '__main__':
                                                   num_workers=opt.n_workers,
                                                   shuffle=opt.shuffle)
         for epoch in range(opt.n_epochs):
-            manager.save_weight_figure(residual_weights, epoch) if epoch == 0 else None
+            # manager.save_weight_figure(block_weights, epoch) if epoch == 0 else None
             package.update({'Epoch': epoch + 1})
-            residual_signals = np.zeros(shape=opt.n_blocks + 1, dtype=np.float32)
+            # residual_signals = np.zeros(shape=opt.n_blocks + 1, dtype=np.float32)
             for i, data_dict in enumerate(data_loader):
                 time = datetime.datetime.now()
                 current_step += 1
@@ -125,21 +129,24 @@ if __name__ == '__main__':
                 G_optim.step()
 
                 package.update({'Current_step': current_step, 'running_time': datetime.datetime.now() - time})
-                residual_signals += package['residual_signals']
+                # residual_signals += package['residual_signals']
 
                 manager(package)
                 if opt.debug:
                     break
 
                 if i % opt.display_freq == 0:
-                    residual_weights = []
-                    for i in range(opt.n_blocks):
-                        residual_weights += [getattr(getattr(G.translator, "ResidualBlock{}".format(i)),
-                                                     'ResidualWeight').detach().cpu()]
-                    manager.save_weight_figure(residual_weights, epoch + 1)
+                    block_weights = []
+                    for j in range(opt.n_blocks):
+                        if opt.trans_module == 'RB':
+                            block_weights += [getattr(getattr(G.translator, "ResidualBlock{}".format(i)),
+                                                      'BlockWeight').detach().cpu()]
+                        # elif opt.trans_module == 'DB':
+                        #    block_weights += [getattr(G.translator, "BlockWeight{}".format(j)).detach().cpu()]
+                    # manager.save_weight_figure(block_weights, epoch + 1)
 
-            residual_signals /= len(data_loader)
-            manager.save_signal_figure(residual_signals, epoch + 1)
+            # residual_signals /= len(data_loader)
+            # manager.save_signal_figure(residual_signals, epoch + 1)
 
             if epoch > opt.epoch_decay:
                 lr = update_lr(lr, opt.n_epochs - opt.epoch_decay, A_optim, G_optim)

@@ -67,25 +67,25 @@ class Generator(nn.Module):
 
     def forward(self, x):
         result = self.translator(self.down_blocks(x))
-        # for i in range(len(residual_signals)):
-        #    residual_signals[i] = residual_signals[i].detach().mean().cpu()
-        return self.up_blocks(result) # , np.array(residual_signals)
+        return self.up_blocks(result)
 
     @staticmethod
     def get_trans_network(opt, n_ch):
         trans_module = opt.trans_module
         if trans_module == 'DB':
             from networks.dense_modules import DenseNetwork
-            network = DenseNetwork(opt.n_blocks, n_ch, opt.growth_rate, opt.n_dense_layers, efficient=opt.efficient)
+            network = DenseNetwork(opt.n_blocks, n_ch, opt.growth_rate, opt.n_dense_layers, efficient=opt.efficient,
+                                   block_weight=opt.block_weight)
         elif trans_module == 'RB':
             from networks.residual_modules import ResidualNetwork
-            network = ResidualNetwork(opt.n_blocks, n_ch)
+            network = ResidualNetwork(opt.n_blocks, n_ch, block_weight=opt.block_weight)
         elif trans_module == 'RDB':
             from networks.residual_dense_modules import ResidualDenseNetwork
             network = ResidualDenseNetwork(opt.n_blocks, n_ch, opt.growth_rate, opt.n_dense_layers)
         elif trans_module == 'RIR':
             from networks.residual_modules import ResidualInResidualNetwork
-            network = ResidualInResidualNetwork(opt.n_groups, opt.n_blocks, n_ch, opt.rir_ch)
+            network = ResidualInResidualNetwork(opt.n_groups, opt.n_blocks, n_ch, opt.rir_ch,
+                                                block_weight=opt.block_weight)
         else:
             raise NotImplementedError
         return network
@@ -176,7 +176,6 @@ class ProgressivePatchCritic(nn.Module):
         n_RB_C = opt.n_RB_C
 
         n_in_conv = n_down + 1
-
         for i in range(n_in_conv):  # 0, 1, 2, 3, 4, 5
             in_conv = [nn.Conv2d(input_ch, min(n_ch, max_ch), kernel_size=3, padding=1, stride=1), act]
             setattr(self, 'In_conv_{}'.format(i), nn.Sequential(*in_conv))

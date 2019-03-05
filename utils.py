@@ -80,9 +80,9 @@ def configure(opt):
     args = list()
     args.append(trans_module)
     args.append(opt.n_blocks)
-    # args.append('GFF')
-    args.append('LR')
-    args.append('1.0')
+    # args.append('LR')
+    # args.append('Ex')
+    # args.append('Entry')
     # args.append('0.0001')
     args.append('prelu') if opt.G_act is 'prelu' else None
 
@@ -264,11 +264,11 @@ class Manager(object):
 
     def save_signal_figure(self, signals, epoch):
         plt.figure(figsize=[9.6, 7.2])
-        plt.plot(range(len(signals)), signals, linestyle='--', color='k', marke='x')
+        plt.plot(range(len(signals)), signals, linestyle='--', color='k', marker='x')
         plt.axis([-1, len(signals), signals.min() * 0.8, signals.max() * 1.2])
         plt.xlabel('Residual index')
         plt.xticks(range(len(signals)))
-        plt.ylabel('Signal per residual block')
+        plt.ylabel('Signal per block')
         plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_signals.png'.format(epoch)))
         plt.close()
         with open(self.signal_log, 'a') as f:
@@ -281,14 +281,16 @@ class Manager(object):
         delta = max(abs(weight.max()), abs(weight.min()))
         # print("{}, {}\n".format(epoch, mean_arr))
         plt.figure(figsize=[9.6, 7.2])
-        plt.axhline(y=init_weight, linestyle='--', color='k')
-        plt.plot(range(1, len(weight) + 1), weight, linestyle='-', marker='^', color='r')
+        # plt.axhline(y=init_weight, linestyle='--', color='k')
+
         plt.axis([0, len(weight) + 1, 0, 2])
-        for i in range(len(20)):
-            plt.axhline(y=0.1 * i, linestyle='--', color='0.4')
+        for i in range(11):
+            plt.axhline(y=0.2 * i, c='gray', alpha=0.3)
         plt.xlabel('Residual index')
         plt.xticks(range(len(weight) + 1))
         plt.ylabel('Weight per residual block')
+        plt.yticks([0.2 * i for i in range(11)])
+        plt.plot(range(1, len(weight) + 1), weight, linestyle='-', marker='^', color='r')
         plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_weights.png'.format(epoch)))
         plt.close()
 

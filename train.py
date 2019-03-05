@@ -21,30 +21,21 @@ if __name__ == '__main__':
     elif opt.GAN_type == 'WGAN_GP':
         from loss import WGANGPLoss as Loss
 
+    manager = Manager(opt)
+
     USE_CUDA = opt.USE_CUDA
     torch.backends.cudnn.benchmark = True
     os.environ['CUDA_VISIBLE_DEVICES'] = str(opt.gpu_ids)
     device = torch.device('cuda' if USE_CUDA else 'cpu', 0)
 
-    G = Generator(opt).apply(partial(init_weights, type=opt.init_type, mode=opt.fan_mode,
-                                     negative_slope=opt.negative_slope, nonlinearity=opt.G_act))
+    G = Generator(opt)
+    G.apply(partial(init_weights, opt.init_type, opt.fan_mode, opt.negative_slope, opt.G_act))
     G.to(device)
+    manager.layer_magnitude(G, epoch=0)
     print(G, "the number of G parameters: ", sum(p.numel() for p in G.parameters() if p.requires_grad))
-    # init_weight = 0.01 ** 2
 
-    # G.translator.StyleExpansion.weight.detach().fill_(init_weight)
-    block_weights = []
-    for i in range(opt.n_blocks):
-        if opt.trans_module == 'RB':
-            getattr(getattr(G.translator, "ResidualBlock{}".format(i)), 'BlockWeight').detach().fill_(1.0)
-            block_weights += [getattr(getattr(G.translator, "ResidualBlock{}".format(i)), 'ResidualWeight').detach().cpu()]
-        # elif opt.trans_module == 'DB':
-        #    getattr(G.translator, 'BlockWeight{}'.format(i)).detach().fill_(1.0)
-        #    block_weights += [getattr(G.translator, "BlockWeight{}".format(i)).detach().cpu()]
-    # block_weights = np.array(block_weights)
-
-    A = Adversarial(opt).apply(partial(init_weights, type=opt.init_type, mode=opt.fan_mode,
-                                       negative_slope=opt.negative_slope, nonlinearity=opt.C_act))
+    A = Adversarial(opt)
+    A.apply(partial(init_weights, opt.init_type, opt.fan_mode, opt.negative_slope, opt.C_act))
     A.to(device)
     print(A, "the number of A parameters: ", sum(p.numel() for p in A.parameters() if p.requires_grad))
 
@@ -52,8 +43,6 @@ if __name__ == '__main__':
 
     G_optim = torch.optim.Adam(G.parameters(), lr=opt.lr, betas=(opt.beta1, opt.beta2), eps=opt.eps)
     A_optim = torch.optim.Adam(A.parameters(), lr=opt.lr, betas=(opt.beta1, opt.beta2), eps=opt.eps)
-
-    manager = Manager(opt)
 
     current_step = 0
     lr = opt.lr
@@ -66,10 +55,9 @@ if __name__ == '__main__':
         for level in range(opt.n_downsample + 1):  # 0 1 2 3 4 5
             level_in = level
             dataset = CustomDataset(opt, level=level)
-            data_loader = torch.utils.data.DataLoader(dataset=dataset,
-                                                      batch_size=opt.batch_size,
-                                                      num_workers=opt.n_workers,
-                                                      shuffle=opt.shuffle)
+            data_loader = torch.utils.data.DataLoader(dataset=dataset, batch_size=opt.batch_size,
+                                                      num_workers=opt.n_workers, shuffle=opt.shuffle)
+
             for epoch in range(n_epochs_per_lod):
                 package.update({'Epoch': epoch + 1})
                 for _, data_dict in enumerate(data_loader):
@@ -103,14 +91,11 @@ if __name__ == '__main__':
 
     else:
         dataset = CustomDataset(opt)
-        data_loader = torch.utils.data.DataLoader(dataset=dataset,
-                                                  batch_size=opt.batch_size,
-                                                  num_workers=opt.n_workers,
+        data_loader = torch.utils.data.DataLoader(dataset=dataset, batch_size=opt.batch_size, num_workers=opt.n_workers,
                                                   shuffle=opt.shuffle)
+
         for epoch in range(opt.n_epochs):
-            # manager.save_weight_figure(block_weights, epoch) if epoch == 0 else None
             package.update({'Epoch': epoch + 1})
-            # residual_signals = np.zeros(shape=opt.n_blocks + 1, dtype=np.float32)
             for i, data_dict in enumerate(data_loader):
                 time = datetime.datetime.now()
                 current_step += 1
@@ -129,25 +114,18 @@ if __name__ == '__main__':
                 G_optim.step()
 
                 package.update({'Current_step': current_step, 'running_time': datetime.datetime.now() - time})
-                # residual_signals += package['residual_signals']
 
                 manager(package)
                 if opt.debug:
                     break
 
-                if i % opt.display_freq == 0:
-                    block_weights = []
-                    for j in range(opt.n_blocks):
-                        if opt.trans_module == 'RB':
-                            block_weights += [getattr(getattr(G.translator, "ResidualBlock{}".format(i)),
-                                                      'BlockWeight').detach().cpu()]
-                        # elif opt.trans_module == 'DB':
-                        #    block_weights += [getattr(G.translator, "BlockWeight{}".format(j)).detach().cpu()]
-                    # manager.save_weight_figure(block_weights, epoch + 1)
-
-            # residual_signals /= len(data_loader)
-            # manager.save_signal_figure(residual_signals, epoch + 1)
-
+                # if i % opt.display_freq == 0:
+                #     block_weights = []
+                #     for j in range(opt.n_blocks):
+                #         if opt.trans_module == 'RB':
+                #             block_weights += [getattr(getattr(G.translator, "ResidualBlock{}".format(i)),
+                #                                       'BlockWeight').detach().cpu()]
+            manager.layer_magnitude(G, epoch + 1)
             if epoch > opt.epoch_decay:
                 lr = update_lr(lr, opt.n_epochs - opt.epoch_decay, A_optim, G_optim)
 

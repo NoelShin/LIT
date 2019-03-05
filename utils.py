@@ -95,8 +95,9 @@ def configure(opt):
     model_name = model_namer(*args, **kwargs)
     make_dir(dataset_name, model_name, is_train=is_train)
 
-    opt.image_dir = os.path.join('./checkpoints', dataset_name, model_name,  'Image/{}'.
-                                 format('Training' if is_train else 'Test'))
+    opt.analysis_dir = os.path.join('./checkpoints', dataset_name, model_name, 'Analysis')
+    opt.image_dir = os.path.join('./checkpoints', dataset_name, model_name,  'Image', '{}'.format('Training' if is_train
+                                                                                                  else 'Test'))
 
     opt.model_dir = os.path.join('./checkpoints', dataset_name, model_name, 'Model')
     log_path = os.path.join(opt.model_dir, 'opt.txt')
@@ -150,6 +151,7 @@ def make_dir(dataset_name=None, model_name=None, is_train=False):
     if is_train:
         os.makedirs(os.path.join('./checkpoints', dataset_name, model_name, 'Image', 'Training'), exist_ok=True)
         os.makedirs(os.path.join('./checkpoints', dataset_name, model_name, 'Model'), exist_ok=True)
+        os.makedirs(os.path.join('./checkpoints', dataset_name, model_name, 'Analysis'), exist_ok=True)
     else:
         os.makedirs(os.path.join('./checkpoints', dataset_name, model_name, 'Image', 'Test'), exist_ok=True)
 
@@ -168,6 +170,7 @@ def model_namer(*elements, **k_elements):
 
 class Manager(object):
     def __init__(self, opt):
+        self.analysis_dir = opt.analysis_dir
         self.GAN_type = opt.GAN_type
         self.model_dir = opt.model_dir
         self.log = os.path.join(self.model_dir, 'log.txt')
@@ -176,11 +179,11 @@ class Manager(object):
         self.signal_log = os.path.join(self.model_dir, 'ResidualSignals.txt')
         self.weight_log = os.path.join(self.model_dir, 'ResidualWeights.txt')
 
-        with open(self.signal_log, 'wt') as log:
-            log.write('Epoch, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
+        # with open(self.signal_log, 'wt') as log:
+        #    log.write('Epoch, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
 
-        with open(self.weight_log, 'wt') as log:
-            log.write('Epoch, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
+        # with open(self.weight_log, 'wt') as log:
+        #     log.write('Epoch, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
 
         if self.GAN_type == 'LSGAN':
             with open(self.log, 'wt') as log:
@@ -229,6 +232,32 @@ class Manager(object):
             data = data * scale + bias
         return data
 
+    @staticmethod
+    def write_log(log_path, informations, epoch, header=None):
+        with open(log_path, 'wt' if epoch == 0 else 'a') as log:
+            log.write(header) if not header else None
+            log.write(informations + '\n')
+            log.close()
+
+    def layer_magnitude(self, G, epoch):
+        names = list()
+        magnitudes = list()
+        for name, m in G.named_modules:
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+                names.append(name)
+                magnitudes.append(m.weight.detach().abs().mean().cpu().item())
+        self.write_log(os.path.join(self.analysis_dir, 'Layer_magnitudes.txt'), ','.join(map(str, magnitudes)), epoch,
+                       header='Epoch, ' + ','.join(names) if epoch == 0 else None)
+        magnitudes = np.array(magnitudes)
+        plt.figure()
+        plt.axhline(y=magnitudes.mean(), linestyle='--')
+        plt.xticks(range(len(magnitudes) + 1))
+        plt.xlabel('Layer index')
+        plt.ylabel('Average absolute magnitude per layer')
+        plt.plot(len(magnitudes), magnitudes, linestyle='--', marker='^', color='g')
+        plt.savefig(os.path.join(self.analysis_dir, 'layer_magnitude_{}.png'.format(epoch)))
+        plt.close()
+
     def tensor2image(self, image_tensor):
         np_image = image_tensor[0].cpu().float().numpy()
         if len(np_image.shape) == 3:
@@ -261,20 +290,6 @@ class Manager(object):
             path_G = os.path.join(self.model_dir, str(package['Epoch']) + '_' + 'G.pt')
             torch.save(package['A_state_dict'], path_A)
             torch.save(package['G_state_dict'], path_G)
-
-    def save_signal_figure(self, signals, epoch):
-        plt.figure(figsize=[9.6, 7.2])
-        plt.plot(range(len(signals)), signals, linestyle='--', color='k', marker='x')
-        plt.axis([-1, len(signals), signals.min() * 0.8, signals.max() * 1.2])
-        plt.xlabel('Residual index')
-        plt.xticks(range(len(signals)))
-        plt.ylabel('Signal per block')
-        plt.savefig(os.path.join(self.model_dir, 'Epoch_{}_signals.png'.format(epoch)))
-        plt.close()
-        with open(self.signal_log, 'a') as f:
-            f.write("{}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}},"
-                    "{:.{prec}}, {:.{prec}}\n".format(epoch, *signals, prec=6))
-            f.close()
 
     def save_weight_figure(self, weight,  epoch, init_weight=1.0):
         weight = np.array(weight)

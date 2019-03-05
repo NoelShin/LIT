@@ -28,15 +28,15 @@ class BaseOption(object):
                                  help='[BatchNorm2d, InstanceNorm2d, PixelNorm]')
 
         self.parser.add_argument('--trans_module', type=str, default='RIR', help='[RB, DB, RDB, RIR]')
-        self.parser.add_argument('--n_blocks', type=int, default=18, help='the number of residual blocks')
+        self.parser.add_argument('--n_blocks', type=int, default=9, help='the number of residual blocks')
 
         # about RIR
-        self.parser.add_argument('--n_groups', type=int, default=16, help='the number of residual groups')
-        self.parser.add_argument('--rir_ch', type=int, default=256)
+        self.parser.add_argument('--n_groups', type=int, default=4, help='the number of residual groups')
+        self.parser.add_argument('--rir_ch', type=int, default=512)
 
         # about DB
         self.parser.add_argument('--efficient', action='store_true', default=True)
-        self.parser.add_argument('--growth_rate', type=int, default=256)
+        self.parser.add_argument('--growth_rate', type=int, default=32)
         self.parser.add_argument('--n_dense_layers', type=int, default=4, help='how many dense layers in a RDB')
 
         # about architecture
@@ -48,7 +48,7 @@ class BaseOption(object):
         self.parser.add_argument('--n_enhance_blocks', type=int, default=2,
                                  help='the number of enhancement blocks per level in decoder')
         self.parser.add_argument('--n_RB_C', type=int, default=2)
-        self.parser.add_argument('--n_workers', type=int, default=2, help='how many threads you want to use')
+        self.parser.add_argument('--n_workers', type=int, default=0, help='how many threads you want to use')
         self.parser.add_argument('--pad_type', type=str, default='reflection', help='[reflection, replication, zero]')
         self.parser.add_argument('--pad_type_C', type=str, default='zero')
         self.parser.add_argument('--pixel_shuffle', action='store_true', default=False)

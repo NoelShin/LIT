@@ -36,35 +36,40 @@ class Generator(nn.Module):
         down_blocks = []
         up_blocks = []
         down_blocks += [pad(3), nn.Conv2d(input_ch, n_ch, kernel_size=7), norm(n_ch), act]
-        for _ in range(n_down):
+        for _ in range(n_down - 1):
             down_blocks += [nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=1, stride=2),
                             norm(min(2 * n_ch, max_ch)), act]
             n_ch *= 2
 
         if trans_module == 'DB':
-            down_blocks += [nn.Conv2d(min(n_ch, max_ch), opt.growth_rate, kernel_size=1), norm(opt.growth_rate)]
-            self.translator = self.get_trans_network(opt, opt.growth_rate)
+            down_blocks += [nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=1, stride=2),
+                            norm(min(2 * n_ch, max_ch))]
+            self.translator = self.get_trans_network(opt, 1024)
         elif trans_module == 'RIR':
-            down_blocks += [nn.Conv2d(min(n_ch, max_ch), opt.rir_ch, kernel_size=1), norm(opt.rir_ch)]
-            self.translator = self.get_trans_network(opt, opt.rir_ch)
+            down_blocks += [nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=1, stride=2),
+                            norm(min(2 * n_ch, max_ch))]
+            # down_blocks += [nn.Conv2d(min(n_ch, max_ch), opt.rir_ch, kernel_size=1), norm(opt.rir_ch)]
+            self.translator = self.get_trans_network(opt, 1024)
         else:
+            down_blocks += [nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=1, stride=2),
+                            norm(min(2 * n_ch, max_ch)), act]
             self.translator = self.get_trans_network(opt, min(n_ch, max_ch))
 
         for _ in range(n_down):
-            up_blocks += [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
+            up_blocks += [nn.ConvTranspose2d(min(2 * n_ch, max_ch), min(n_ch, max_ch), kernel_size=3, padding=1,
                                              stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act]
             n_ch //= 2
 
-        up_blocks += [pad(3), nn.Conv2d(n_ch, output_ch, kernel_size=7), nn.Tanh()]
+        up_blocks += [pad(3), nn.Conv2d(2 * n_ch, output_ch, kernel_size=7), nn.Tanh()]
 
         self.down_blocks = nn.Sequential(*down_blocks)
         self.up_blocks = nn.Sequential(*up_blocks)
 
     def forward(self, x):
-        result, residual_signals = self.translator(self.down_blocks(x))
-        for i in range(len(residual_signals)):
-            residual_signals[i] = residual_signals[i].detach().mean().cpu()
-        return self.up_blocks(result), np.array(residual_signals)
+        result = self.translator(self.down_blocks(x))
+        # for i in range(len(residual_signals)):
+        #    residual_signals[i] = residual_signals[i].detach().mean().cpu()
+        return self.up_blocks(result) # , np.array(residual_signals)
 
     @staticmethod
     def get_trans_network(opt, n_ch):
@@ -80,7 +85,7 @@ class Generator(nn.Module):
             network = ResidualDenseNetwork(opt.n_blocks, n_ch, opt.growth_rate, opt.n_dense_layers)
         elif trans_module == 'RIR':
             from networks.residual_modules import ResidualInResidualNetwork
-            network = ResidualInResidualNetwork(opt.n_groups, opt.n_blocks, n_ch)
+            network = ResidualInResidualNetwork(opt.n_groups, opt.n_blocks, n_ch, opt.rir_ch)
         else:
             raise NotImplementedError
         return network

@@ -1,5 +1,4 @@
 import os
-import copy
 import torch
 import torch.nn as nn
 import numpy as np
@@ -80,6 +79,9 @@ def configure(opt):
     args = list()
     args.append(trans_module)
     args.append(opt.n_blocks)
+    args.append(opt.GAN_type)
+    args.append('CT') if opt.CT and opt.GAN_type == 'WGAN' else None
+    args.append('GP') if opt.GP else None
     # args.append('LR')
     # args.append('Ex')
     # args.append('Entry')
@@ -130,17 +132,16 @@ def configure(opt):
         log.close()
 
 
-def init_weights(module, type='kaiming_normal', mode='fan_in', negative_slope=0.2, nonlinearity='leaky_relu'):
+def init_weights(module, type='normal', mode='fan_in', negative_slope=0.2, nonlinearity='leaky_relu'):
     if isinstance(module, nn.Conv2d) or isinstance(module, nn.ConvTranspose2d):
         if type == 'kaiming_normal':
             nn.init.kaiming_normal_(module.weight.detach(), a=negative_slope, mode=mode, nonlinearity=nonlinearity)
 
         elif type == 'normal':
-            nn.init.normal_(module.weight.detach(), 0.0, 0.02)
+            nn.init.normal_(module.weight.detach(), mean=0.0, std=0.02)
 
         else:
             raise NotImplementedError("Weight init type {} is not valid.".format(type))
-
     else:
         pass
 
@@ -158,7 +159,6 @@ def make_dir(dataset_name=None, model_name=None, is_train=False):
 
 def model_namer(*elements, **k_elements):
     name = ''
-
     for v in elements:
         name += str(v) + '_'
 
@@ -171,7 +171,9 @@ def model_namer(*elements, **k_elements):
 class Manager(object):
     def __init__(self, opt):
         self.analysis_dir = opt.analysis_dir
+        self.CT = opt.CT
         self.GAN_type = opt.GAN_type
+        self.GP = opt.GP
         self.model_dir = opt.model_dir
         self.log = os.path.join(self.model_dir, 'log.txt')
         self.n_blocks = opt.n_blocks
@@ -179,22 +181,8 @@ class Manager(object):
         self.signal_log = os.path.join(self.model_dir, 'ResidualSignals.txt')
         self.weight_log = os.path.join(self.model_dir, 'ResidualWeights.txt')
 
-        # with open(self.signal_log, 'wt') as log:
-        #    log.write('Epoch, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
-
-        # with open(self.weight_log, 'wt') as log:
-        #     log.write('Epoch, 1, 2, 3, 4, 5, 6, 7, 8, 9\n')
-
-        if self.GAN_type == 'LSGAN':
-            with open(self.log, 'wt') as log:
-                log.write('Epoch, Current_step, C_loss, G_loss, FM_loss, Runtime\n')
-
-        elif self.GAN_type == 'WGAN_GP':
-            with open(self.log, 'wt') as log:
-                log.write('Epoch, Current_step, C_loss, G_loss, GP_loss, FM_loss, Runtime\n')
-
-        else:
-            raise NotImplementedError
+        with open(self.log, 'wt') as log:
+            log.write('Epoch, Current_step, total_C_loss, C_loss, CT, GP, total_G_loss, G_loss, FM, VGG, Runtime\n')
 
         self.image_dir = opt.image_dir
         self.image_mode = opt.image_mode
@@ -206,22 +194,16 @@ class Manager(object):
             self.save_freq = opt.save_freq
 
     def report_loss(self, package):
-        if self.GAN_type == 'LSGAN':
-            inf = [package['Epoch'], package['Current_step'], package['A_loss'].detach().item(),
-                   package['G_loss'].detach().item(), package['FM']]
-            print("Epoch: {} Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} FM: {:.{prec}}".format(*inf, prec=4))
+        inf = [package['Epoch'], package['Current_step'], package['total_A_loss'].detach().item(), package['A_loss'],
+               package['CT'], package['GP'], package['total_G_loss'].detach().item(), package['G_loss'], package['FM'],
+               package['VGG'], package['running_time']]
+        print("Epoch: {} Current_step: {} total_A_loss: {:.{prec}} A_loss: {:.{prec}} CT: {:.{prec}} GP: {:.{prec}}"
+              " total_G_loss: {:.{prec}} G_loss: {:.{prec}} FM: {:.{prec}} VGG: {:.{prec}} Runtime: {}"
+              .format(*inf, prec=4))
 
-            with open(self.log, 'a') as log:
-                log.write('{}, {}, {:.{prec}}, {:.{prec}}, {:.{prec}}\n'.format(*inf, prec=4))
-
-        elif self.GAN_type == 'WGAN_GP':
-            inf = [package['Epoch'], package['Current_step'], package['A_loss'].detach().item(),
-                   package['G_loss'].detach().item(), package['GP'], package['FM']]
-            print("Epoch: {} Current_step: {} A_loss: {:.{prec}}  G_loss: {:.{prec}} GP: {:.{prec}} FM: {:.{prec}},"
-                  .format(*inf, prec=4))
-
-            with open(self.log, 'a') as log:
-                log.write('{}, {}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}\n'.format(*inf, prec=4))
+        with open(self.log, 'a') as log:
+            log.write('{}, {}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}}, {:.{prec}},'
+                      ' {:.{prec}} {}\n'.format(*inf, prec=4))
 
     @staticmethod
     def adjust_dynamic_range(data, drange_in, drange_out):
@@ -235,26 +217,27 @@ class Manager(object):
     @staticmethod
     def write_log(log_path, informations, epoch, header=None):
         with open(log_path, 'wt' if epoch == 0 else 'a') as log:
-            log.write(header) if not header else None
+            log.write(header) if header else None
             log.write(informations + '\n')
             log.close()
 
     def layer_magnitude(self, G, epoch):
         names = list()
         magnitudes = list()
-        for name, m in G.named_modules:
+        for name, m in G.named_modules():
             if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
                 names.append(name)
                 magnitudes.append(m.weight.detach().abs().mean().cpu().item())
         self.write_log(os.path.join(self.analysis_dir, 'Layer_magnitudes.txt'), ','.join(map(str, magnitudes)), epoch,
-                       header='Epoch, ' + ','.join(names) if epoch == 0 else None)
+                       header=str('Epoch, ' + ','.join(names)) if epoch == 0 else None)
+        print(names)
         magnitudes = np.array(magnitudes)
-        plt.figure()
+        plt.figure(figsize=[9.6, 7.2])
         plt.axhline(y=magnitudes.mean(), linestyle='--')
         plt.xticks(range(len(magnitudes) + 1))
         plt.xlabel('Layer index')
         plt.ylabel('Average absolute magnitude per layer')
-        plt.plot(len(magnitudes), magnitudes, linestyle='--', marker='^', color='g')
+        plt.plot(range(len(magnitudes)), magnitudes, linestyle='--', marker='^', color='g')
         plt.savefig(os.path.join(self.analysis_dir, 'layer_magnitude_{}.png'.format(epoch)))
         plt.close()
 

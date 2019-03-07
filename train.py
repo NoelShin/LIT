@@ -18,8 +18,8 @@ if __name__ == '__main__':
 
     if opt.GAN_type == 'LSGAN':
         from loss import LSGANLoss as Loss
-    elif opt.GAN_type == 'WGAN_GP':
-        from loss import WGANGPLoss as Loss
+    elif opt.GAN_type == 'WGAN':
+        from loss import WGANLoss as Loss
 
     manager = Manager(opt)
 
@@ -95,36 +95,32 @@ if __name__ == '__main__':
                                                   shuffle=opt.shuffle)
 
         for epoch in range(opt.n_epochs):
-            package.update({'Epoch': epoch + 1})
             for i, data_dict in enumerate(data_loader):
+                package = {'Epoch': epoch + 1}
                 time = datetime.datetime.now()
-                current_step += 1
 
+                current_step += 1
+                package.update({'Current_step': current_step})
                 if USE_CUDA:
                     for k, v in data_dict.items():
                         data_dict.update({k: v.to(device)})
 
-                package.update(criterion(A, G, data_dict))
+                package.update(criterion(A, G, data_dict, current_step))
                 A_optim.zero_grad()
-                package['A_loss'].backward()
+                package['total_A_loss'].backward()
                 A_optim.step()
 
-                G_optim.zero_grad()
-                package['G_loss'].backward()
-                G_optim.step()
-
-                package.update({'Current_step': current_step, 'running_time': datetime.datetime.now() - time})
-
+                if current_step % opt.n_critics == 0:
+                    G_optim.zero_grad()
+                    package['total_G_loss'].backward()
+                    G_optim.step()
+                package.update({'running_time': str(datetime.datetime.now() - time)})
                 manager(package)
+                del package
+
                 if opt.debug:
                     break
 
-                # if i % opt.display_freq == 0:
-                #     block_weights = []
-                #     for j in range(opt.n_blocks):
-                #         if opt.trans_module == 'RB':
-                #             block_weights += [getattr(getattr(G.translator, "ResidualBlock{}".format(i)),
-                #                                       'BlockWeight').detach().cpu()]
             manager.layer_magnitude(G, epoch + 1)
             if epoch > opt.epoch_decay:
                 lr = update_lr(lr, opt.n_epochs - opt.epoch_decay, A_optim, G_optim)

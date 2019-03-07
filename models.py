@@ -44,25 +44,23 @@ class Generator(nn.Module):
         if trans_module == 'DB':
             down_blocks += [nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=1, stride=2),
                             norm(min(2 * n_ch, max_ch))]
-            self.translator = self.get_trans_network(opt, 1024)
         elif trans_module == 'RIR':
             down_blocks += [nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=1, stride=2),
                             norm(min(2 * n_ch, max_ch))]
             # down_blocks += [nn.Conv2d(min(n_ch, max_ch), opt.rir_ch, kernel_size=1), norm(opt.rir_ch)]
-            self.translator = self.get_trans_network(opt, 1024)
         else:
             down_blocks += [nn.Conv2d(min(n_ch, max_ch), min(2 * n_ch, max_ch), kernel_size=3, padding=1, stride=2),
                             norm(min(2 * n_ch, max_ch)), act]
-            self.translator = self.get_trans_network(opt, min(n_ch, max_ch))
 
         for _ in range(n_down):
             up_blocks += [nn.ConvTranspose2d(min(2 * n_ch, max_ch), min(n_ch, max_ch), kernel_size=3, padding=1,
-                                             stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act]
+                                             stride=2, output_padding=1), norm(min(n_ch, max_ch)), act]
             n_ch //= 2
 
         up_blocks += [pad(3), nn.Conv2d(2 * n_ch, output_ch, kernel_size=7), nn.Tanh()]
 
         self.down_blocks = nn.Sequential(*down_blocks)
+        self.translator = self.get_trans_network(opt, 1024)
         self.up_blocks = nn.Sequential(*up_blocks)
 
     def forward(self, x):
@@ -108,7 +106,7 @@ class ProgressiveGenerator(Generator):
         delattr(self, 'up_blocks')
         for i in range(n_down):
             up_block = [nn.ConvTranspose2d(min(n_ch, max_ch), min(n_ch // 2, max_ch), kernel_size=3, padding=1,
-                                          stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act,
+                                           stride=2, output_padding=1), norm(min(n_ch // 2, max_ch)), act,
                         pad(1), nn.Conv2d(min(n_ch // 2, max_ch), min(n_ch // 2, max_ch), kernel_size=3),
                         norm(min(n_ch // 2, max_ch)), act]
             rgb_blocks += [[pad(1), nn.Conv2d(min(n_ch // 2, max_ch), output_ch, kernel_size=3)]]
@@ -133,33 +131,47 @@ class ProgressiveGenerator(Generator):
 class PatchCritic(nn.Module):
     def __init__(self, opt):
         super(PatchCritic, self).__init__()
-        # self.act = nn.LeakyReLU(0.2, inplace=False)  # to avoid inplace activation. inplace activation cause error GP
-        act = nn.LeakyReLU(0.2, inplace=True)
+        # act = nn.LeakyReLU(0.2, inplace=True)
+        C_norm = opt.C_norm
         input_channel = opt.input_ch + opt.output_ch if opt.C_condition else opt.output_ch
         n_df = opt.n_df
         norm = nn.InstanceNorm2d
         patch_size = opt.patch_size
 
-        blocks = [[nn.Conv2d(input_channel, n_df, kernel_size=4, padding=1, stride=2), act]]
-        blocks += [[nn.Conv2d(n_df, 2 * n_df, kernel_size=4, padding=1, stride=2), norm(2 * n_df), act]]
+        blocks = [[nn.Conv2d(input_channel, n_df, kernel_size=4, padding=1, stride=2)]]
+        blocks += [[nn.Conv2d(n_df, 2 * n_df, kernel_size=4, padding=1, stride=2)]]
+        blocks[-1].append(norm(2 * n_df)) if opt.C_norm else None
         if patch_size == 16:
-            blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1), norm(4 * n_df), act]]
+            blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1)]]
+            blocks[-1].append(norm(4 * n_df)) if opt.C_norm else None
             blocks += [[nn.Conv2d(4 * n_df, 1, kernel_size=4, padding=1)]]
 
         elif patch_size == 70:
-            blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=2), norm(4 * n_df), act]]
-            blocks += [[nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1), norm(8 * n_df), act]]
+            blocks += [[nn.Conv2d(2 * n_df, 4 * n_df, kernel_size=4, padding=1, stride=2)]]
+            blocks[-1].append(norm(4 * n_df)) if opt.C_norm else None
+            blocks += [[nn.Conv2d(4 * n_df, 8 * n_df, kernel_size=4, padding=1)]]
+            blocks[-1].append(norm(8 * n_df)) if opt.C_norm else None
             blocks += [[nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1)]]
 
+        self.CT = opt.CT
+        self.dropout = nn.Dropout2d(p=0.5, inplace=False) if opt.CT else None
+        self.GAN_type = opt.GAN_type
         self.n_blocks = len(blocks)
         for i in range(self.n_blocks):
             setattr(self, 'block_{}'.format(i), nn.Sequential(*blocks[i]))
 
+        self.act = nn.LeakyReLU(0.2, inplace=False)  # to avoid inplace activation. inplace activation cause error GP
+
     def forward(self, x):
         result = [x]
         for i in range(self.n_blocks):
-            result += [getattr(self, 'block_{}'.format(i))(result[-1])]
-
+            if i == self.n_blocks - 1:
+                result += [getattr(self, 'block_{}'.format(i))(result[-1])]
+            else:
+                if self.CT and self.GAN_type == 'WGAN':
+                    result += [self.dropout(self.act(getattr(self, 'block_{}'.format(i))(result[-1])))]
+                else:
+                    result += [self.act(getattr(self, 'block_{}'.format(i))(result[-1]))]
         return result[1:]  # except for the input
 
 

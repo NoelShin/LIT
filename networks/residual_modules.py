@@ -17,14 +17,14 @@ class ResidualBlock(nn.Module):
         if self.block_weight:
             return x + torch.mul(getattr(self, 'ResidualBlock')(x), getattr(self, 'BlockWeight'))
         else:
-            return x + getattr(self, 'ResidualBlock')(x), getattr(self, 'BlockWeight')
+            return x + getattr(self, 'ResidualBlock')(x)
 
 
 class ResidualNetwork(nn.Module):
     def __init__(self, n_blocks, n_ch, block_weight=False):
         super(ResidualNetwork, self).__init__()
         for i in range(n_blocks):
-            self.add_module('ResidualBlock{}'.format(i), ResidualBlock(n_ch, block_weight))
+            self.add_module('ResidualBlock{}'.format(i), ResidualBlock(n_ch, block_weight=block_weight))
         self.n_blocks = n_blocks
 
     def forward(self, x):
@@ -55,7 +55,7 @@ class ResidualGroup(nn.Module):
     def __init__(self, n_blocks, n_ch, rir_ch, block_weight=False):
         super(ResidualGroup, self).__init__()
         group = [nn.Conv2d(n_ch, rir_ch, kernel_size=1)]
-        group += [BasicResidualBlock(rir_ch, block_weight) for _ in range(n_blocks)]
+        group += [BasicResidualBlock(rir_ch, block_weight=block_weight) for _ in range(n_blocks)]
         group += [nn.Conv2d(rir_ch, n_ch, kernel_size=1)]
         self.group = nn.Sequential(*group)
 
@@ -66,7 +66,7 @@ class ResidualGroup(nn.Module):
 class ResidualInResidualNetwork(nn.Module):
     def __init__(self, n_blocks, n_groups, n_ch, rir_ch, block_weight=False):
         super(ResidualInResidualNetwork, self).__init__()
-        network = [ResidualGroup(n_blocks, n_ch, rir_ch, block_weight) for _ in range(n_groups)]
+        network = [ResidualGroup(n_blocks, n_ch, rir_ch, block_weight=block_weight) for _ in range(n_groups)]
         self.network = nn.Sequential(*network)
 
     def forward(self, x):

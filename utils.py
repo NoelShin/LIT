@@ -194,11 +194,11 @@ class Manager(object):
             self.save_freq = opt.save_freq
 
     def report_loss(self, package):
-        inf = [package['Epoch'], package['Current_step'], package['total_A_loss'].detach().item(), package['A_loss'],
-               package['CT'], package['GP'], package['total_G_loss'].detach().item(), package['G_loss'], package['FM'],
+        inf = [package['Epoch'], package['Current_step'], package['total_A_loss'].detach().item(), package['A_score'],
+               package['CT'], package['GP'], package['total_G_loss'].detach().item(), package['G_score'], package['FM'],
                package['VGG'], package['running_time']]
-        print("Epoch: {} Current_step: {} total_A_loss: {:.{prec}} A_loss: {:.{prec}} CT: {:.{prec}} GP: {:.{prec}}"
-              " total_G_loss: {:.{prec}} G_loss: {:.{prec}} FM: {:.{prec}} VGG: {:.{prec}} Runtime: {}"
+        print("Epoch: {} Current_step: {} total_A_loss: {:.{prec}} A_score: {:.{prec}} CT: {:.{prec}} GP: {:.{prec}}"
+              " total_G_loss: {:.{prec}} G_score: {:.{prec}} FM: {:.{prec}} VGG: {:.{prec}} Runtime: {}"
               .format(*inf, prec=4))
 
         with open(self.log, 'a') as log:

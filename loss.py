@@ -150,13 +150,15 @@ class LSGANLoss(Loss):
         fake_features = C(input_fake, level, level_in) if self.progression else C(input_fake)
         real_features = C(input_real, level, level_in) if self.progression else C(input_real)
 
+        C_score = 0
         for i in range(self.n_C):
             fake_grid = self.get_grid(fake_features[i][-1], is_real=False)
             real_grid = self.get_grid(real_features[i][-1], is_real=True)
 
-            loss_C += (self.criterion(real_features[i][-1], real_grid) +
+            C_score += (self.criterion(real_features[i][-1], real_grid) +
                        self.criterion(fake_features[i][-1], fake_grid)) * 0.5
-        package.update({'A_loss': loss_C.detach().item()})
+        loss_C += C_score
+        package.update({'A_score': C_score.detach().item()})
 
         if self.CT:
             real_features_2 = C(input_fake)
@@ -180,10 +182,12 @@ class LSGANLoss(Loss):
             input_fake = fake
 
         fake_features = C(input_fake, level, level_in) if self.progression else C(input_fake)
+        G_score = 0
         for i in range(self.n_C):
             real_grid = self.get_grid(fake_features[i][-1], is_real=True)
-            loss_G += self.criterion(fake_features[i][-1], real_grid)
-        package.update({'G_loss': loss_G.detach().item()})
+            G_score += self.criterion(fake_features[i][-1], real_grid)
+        loss_G += G_score
+        package.update({'G_score': G_score.detach().item()})
 
         if self.FM:
             FM = 0
@@ -195,8 +199,8 @@ class LSGANLoss(Loss):
 
             for j in range(n_layers):
                 FM += weights[j] * self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
-            loss_G += FM * self.FM_lambda * 1/self.n_C
-            package.update({'FM': FM.detach().item()})
+            loss_G += FM * self.FM_lambda / self.n_C
+            package.update({'FM': FM.detach().item() / self.n_C})
         else:
             package.update({'FM': 0.0})
 
@@ -244,10 +248,12 @@ class WGANLoss(Loss):
         fake_features = C(input_fake)
         real_features = C(input_real)
 
+        C_score = 0
         for i in range(self.n_C):
-            C_loss += (fake_features[i][-1] - real_features[i][-1]).mean()
-            C_loss += self.drift_lambda * (real_features[i][-1].mean() ** 2) if self.drift_loss else 0
-        package.update({"A_loss": C_loss.detach().item()})
+            C_score += (fake_features[i][-1] - real_features[i][-1]).mean()
+            C_score += self.drift_lambda * (real_features[i][-1].mean() ** 2) if self.drift_loss else 0
+        C_loss += C_score
+        package.update({"A_score": C_score.detach().item()})
 
         if self.GP:
             GP = self.calc_GP(C, output=input_fake.detach(), target=input_real)
@@ -274,9 +280,11 @@ class WGANLoss(Loss):
 
             fake_features = C(input_fake)
 
+            G_score = 0
             for i in range(self.n_C):
-                G_loss += -fake_features[i][-1].mean()
-            package.update({'G_loss': G_loss.detach().item()})
+                G_score += -fake_features[i][-1].mean()
+            G_loss += G_score
+            package.update({'G_score': G_score.detach().item()})
 
             if self.FM:
                 FM = 0
@@ -288,8 +296,8 @@ class WGANLoss(Loss):
 
                 for j in range(n_layers):
                     FM += weights[j] * self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
-                G_loss += FM * self.FM_lambda * 1 / self.n_C
-                package.update({'FM': FM.detach().item()})
+                G_loss += FM * self.FM_lambda / self.n_C
+                package.update({'FM': FM.detach().item() / self.n_C})
             else:
                 package.update({'FM': 0.0})
 
@@ -298,7 +306,6 @@ class WGANLoss(Loss):
                 fake_features_VGG, real_features_VGG = self.VGGNet(fake), self.VGGNet(target)
                 VGG += self.calc_FM(fake_features=fake_features_VGG, real_features=real_features_VGG,
                                     weights=self.VGG_weights)
-
                 G_loss += self.VGG_lambda * VGG
                 package.update({'VGG': VGG.detach().item()})
             else:

@@ -156,7 +156,7 @@ class LSGANLoss(Loss):
 
             loss_C += (self.criterion(real_features[i][-1], real_grid) +
                        self.criterion(fake_features[i][-1], fake_grid)) * 0.5
-            package.update({'A_loss': loss_C.detach().item()})
+        package.update({'A_loss': loss_C.detach().item()})
 
         if self.CT:
             real_features_2 = C(input_fake)
@@ -183,22 +183,22 @@ class LSGANLoss(Loss):
         for i in range(self.n_C):
             real_grid = self.get_grid(fake_features[i][-1], is_real=True)
             loss_G += self.criterion(fake_features[i][-1], real_grid)
-            package.update({'G_loss': loss_G.detach().item()})
+        package.update({'G_loss': loss_G.detach().item()})
 
-            if self.FM:
-                FM = 0
-                n_layers = len(fake_features[0])
-                if self.equal_FM_weights:
-                    weights = [1.0 for i in range(n_layers)]
-                else:
-                    weights = [1.0 for i in range(self.n_down)] + [2 ** -(i + 1) for i in range(self.n_RB_C)] + [1.0]
-
-                for j in range(n_layers):
-                    FM += weights[j] * self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
-                loss_G += FM * self.FM_lambda * 1/self.n_C
-                package.update({'FM': FM.detach().item()})
+        if self.FM:
+            FM = 0
+            n_layers = len(fake_features[0])
+            if self.equal_FM_weights:
+                weights = [1.0 for i in range(n_layers)]
             else:
-                package.update({'FM': 0.0})
+                weights = [1.0 for i in range(self.n_down)] + [2 ** -(i + 1) for i in range(self.n_RB_C)] + [1.0]
+
+            for j in range(n_layers):
+                FM += weights[j] * self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
+            loss_G += FM * self.FM_lambda * 1/self.n_C
+            package.update({'FM': FM.detach().item()})
+        else:
+            package.update({'FM': 0.0})
 
         if self.VGG:
             VGG = 0
@@ -246,8 +246,8 @@ class WGANLoss(Loss):
 
         for i in range(self.n_C):
             C_loss += (fake_features[i][-1] - real_features[i][-1]).mean()
-            package.update({"A_loss": C_loss.detach().item()})
             C_loss += self.drift_lambda * (real_features[i][-1].mean() ** 2) if self.drift_loss else 0
+        package.update({"A_loss": C_loss.detach().item()})
 
         if self.GP:
             GP = self.calc_GP(C, output=input_fake.detach(), target=input_real)

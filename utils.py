@@ -80,21 +80,15 @@ def configure(opt):
     args.append(trans_module)
     args.append(opt.n_blocks)
     args.append(opt.GAN_type)
+    args.append('Banach') if opt.GP_mode == 'Banach' else None
+    args.append('div') if opt.GP_mode == 'div' else None
+    args.append('GP') if opt.GP_mode == 'GP' else None
     args.append('CT') if opt.CT and opt.GAN_type == 'WGAN' else None
-    args.append('GP') if opt.GP else None
-    args.append(opt.GP_lambda) if opt.GP else None
-    args.append('Banach') if opt.Banach else None
-    # args.append('LR')
-    # args.append('Ex')
-    # args.append('Entry')
-    # args.append('0.0001')
-    args.append('prelu') if opt.G_act is 'prelu' else None
 
     kwargs = dict()
     kwargs.update({'prog': progression}) if progression else None
     kwargs.update({'G': opt.n_groups, 'C': opt.rir_ch}) if trans_module == 'RIR' else None
     kwargs.update({'L': opt.n_dense_layers, 'K': opt.growth_rate}) if trans_module in ['RDB', 'DB'] else None
-    kwargs.update({'C_down': opt.n_downsample_C, 'RB_C': opt.n_RB_C}) if opt.Res_C else None
 
     model_name = model_namer(*args, **kwargs)
     make_dir(dataset_name, model_name, is_train=is_train)
@@ -232,7 +226,7 @@ class Manager(object):
                 magnitudes.append(m.weight.detach().abs().mean().cpu().item())
         self.write_log(os.path.join(self.analysis_dir, 'Layer_magnitudes.txt'), ','.join(map(str, magnitudes)), epoch,
                        header=str('Epoch, ' + ','.join(names)) if epoch == 0 else None)
-        print(names)
+
         magnitudes = np.array(magnitudes)
         plt.figure(figsize=[9.6, 7.2])
         plt.axhline(y=magnitudes.mean(), linestyle='--')
@@ -245,11 +239,7 @@ class Manager(object):
 
     def tensor2image(self, image_tensor):
         np_image = image_tensor[0].cpu().float().numpy()
-        if len(np_image.shape) == 3:
-            np_image = np.transpose(np_image, (1, 2, 0))  # HWC
-        else:
-            pass
-
+        np_image = np.transpose(np_image, (1, 2, 0)) if len(np_image.shape) == 3 else np_image
         np_image = self.adjust_dynamic_range(np_image, drange_in=[-1., 1.], drange_out=[0, 255])
         np_image = np.clip(np_image, 0, 255).astype(np.uint8)
         return np_image
@@ -314,14 +304,9 @@ class Manager(object):
             f.close()
 
     def __call__(self, package):
-        if package['Current_step'] % self.display_freq == 0:
-            self.save(package, image=True)
-
-        if package['Current_step'] % self.report_freq == 0:
-            self.report_loss(package)
-
-        if package['Current_step'] % self.save_freq == 0:
-            self.save(package, model=True)
+        self.save(package, image=True) if package['Current_step'] % self.display_freq == 0 else None
+        self.report_loss(package) if package['Current_step'] % self.report_freq == 0 else None
+        self.save(package, model=True) if package['Current_step'] % self.save_freq == 0 else None
 
 
 def update_lr(old_lr, n_epoch_decay, D_optim, G_optim):
@@ -335,5 +320,4 @@ def update_lr(old_lr, n_epoch_decay, D_optim, G_optim):
         param_group['lr'] = new_lr
 
     print("Learning rate has been updated from {} to {}.".format(old_lr, new_lr))
-
     return new_lr

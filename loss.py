@@ -229,6 +229,85 @@ class WGANLoss(Loss):
         self.gpu_id = opt.gpu_ids
         self.progression = opt.progression
 
+        if opt.Banach:
+            self.Banach = True
+            self.exponent = opt.exponent
+            self.dual_exponent = 1 / (1 - 1 / self.exponent) if self.exponent != 1 else np.inf
+            self.sobolev_s = opt.sobolev_s
+            self.sobolev_c = opt.sobolev_c
+
+        else:
+            self.Banach = False
+
+    def sobolev_transform(self, x, dual=False):
+        real_x = x
+        imaginary_x = torch.zeros_like(x)
+        x_fft = torch.fft(torch.stack([real_x, imaginary_x], dim=-1), signal_ndim=2)
+        # x_fft[..., 0] stands for real part
+        # x_fft[..., 1] stands for imaginary part
+        dx = x_fft.shape[3]
+        dy = x_fft.shape[2]
+
+        x = torch.arange(dx)
+        x = torch.min(x, dx - x)
+        x = x / (dx // 2)
+
+        y = torch.arange(dy)
+        y = torch.min(y, dy - y)
+        y = y / (dy // 2)
+
+        # constructing the \xi domain
+        X, Y = torch.meshgrid([y, x])
+        X = X[None, None].float()
+        Y = Y[None, None].float()
+
+        # computing the scale (1 + |\xi|^2)^{s/2}
+        scale = (1 + self.sobolev_c * (X ** 2 + Y ** 2)) ** (self.sobolev_s / 2 if not dual else -self.sobolev_s / 2)
+        # scale is a real number which scales both real and imaginary parts by multiplying
+        scale = torch.stack([scale, scale], dim=-1)
+        scale = scale.cuda(0) if self.gpu_id != -1 else scale
+        x_fft *= scale.float()
+        return torch.ifft(x_fft, signal_ndim=2)[..., 0]  # only real part
+
+    def lp_norm(self, x, p=None, epsilon=1e-5):
+        x = x.view(x.shape[0], -1).type(torch.cuda.FloatTensor if self.gpu_id != -1 else torch.FloatTensor)
+        alpha, _ = torch.max(x.abs() + epsilon, dim=-1)
+        return alpha * torch.norm(x / alpha[:, None], p=p, dim=1)
+
+    def get_constants(self, real):
+        real = real
+        transformed_real = self.sobolev_transform(real).view([real.shape[0], -1])
+        lamb = self.lp_norm(transformed_real, p=self.exponent).mean()
+
+        dual_transformed_real = self.sobolev_transform(real, dual=True).view([real.shape[0], -1])
+        gamma = self.lp_norm(dual_transformed_real, p=self.dual_exponent).mean()
+        lamb, gamma = (lamb.cuda(0), gamma.cuda(0)) if self.gpu_id != -1 else (lamb, gamma)
+        return lamb, gamma
+
+    def calc_GP(self, C, output, target, gamma=None):
+        GP = 0
+        alpha = torch.FloatTensor(torch.rand((target.shape[0], 1, 1, 1))).expand(target.shape)
+        alpha = alpha.cuda(0) if self.gpu_id != -1 else alpha
+
+        differences = target - output
+        interp = (alpha * differences + output).requires_grad_(True)
+
+        for i in range(self.n_C):
+            interp_score = getattr(C, 'Scale_{}'.format(i))(interp)[-1]
+            weight_grid = torch.ones(interp_score.shape)
+            weight_grid = weight_grid.cuda(0) if self.gpu_id != -1 else weight_grid
+            gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=weight_grid,
+                            create_graph=True, retain_graph=True, only_inputs=True)[0]
+
+            if self.Banach:
+                dual_sobolev_gradient = self.sobolev_transform(gradient, dual=True)
+                GP += ((self.lp_norm(dual_sobolev_gradient, self.dual_exponent) / gamma - 1) ** 2).mean()
+            else:
+                gradient = gradient.view(gradient.shape[0], -1)
+                GP += ((gradient.norm(2, dim=1) - 1) ** 2).mean()
+            interp = nn.AvgPool2d(kernel_size=3, padding=1, stride=2, count_include_pad=False)(interp)
+        return GP
+
     def __call__(self, C, G, data_dict, current_step, lod=None):
         C_loss = 0
         G_loss = 0
@@ -256,8 +335,14 @@ class WGANLoss(Loss):
         package.update({"A_score": C_score.detach().item()})
 
         if self.GP:
-            GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach())
-            C_loss += self.GP_lambda * GP
+            if self.Banach:
+                lamb, gamma = self.get_constants(input_real)
+                print(lamb, gamma)
+                GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach(), gamma=gamma)
+                C_loss += lamb * GP
+            else:
+                GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach())
+                C_loss += self.GP_lambda * GP
             package.update({'GP': GP.detach().item()})
         else:
             package.update({'GP': 0.0})

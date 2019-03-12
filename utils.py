@@ -68,7 +68,7 @@ def configure(opt):
         opt.VGG = False
 
     else:
-        opt.beta1, opt.beta2 = (0.5, 0.9)
+        opt.beta1, opt.beta2 = (0.0, 0.9)
         opt.n_C = 1 if opt.Res_C else 2
         opt.patch_size = 70
         opt.VGG = True
@@ -82,6 +82,8 @@ def configure(opt):
     args.append(opt.GAN_type)
     args.append('CT') if opt.CT and opt.GAN_type == 'WGAN' else None
     args.append('GP') if opt.GP else None
+    args.append(opt.GP_lambda) if opt.GP else None
+    args.append('Banach') if opt.Banach else None
     # args.append('LR')
     # args.append('Ex')
     # args.append('Entry')

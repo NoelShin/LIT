@@ -18,33 +18,32 @@ class Loss(object):
             self.FM_criterion = self.get_criterion(opt.FM_criterion)
             self.FM_lambda = opt.FM_lambda
 
-            if opt.Res_C:
-                self.equal_FM_weights = True
-                self.n_down = opt.n_downsample if opt.progression else opt.n_downsample_C
-                self.n_RB_C = opt.n_RB_C
-
-            else:
-                self.equal_FM_weights = True
-
         else:
             self.FM = False
 
-        if opt.GP:
-            self.GP = True
+        if opt.GP_mode == 'Banach':
+            self.drift_lambda = opt.drift_lambda
+            self.drift_loss = opt.drift_loss
+            self.exponent = opt.exponent
+            self.dual_exponent = 1 / (1 - 1 / self.exponent) if self.exponent != 1 else np.inf
+            self.sobolev_s = opt.sobolev_s
+            self.sobolev_c = opt.sobolev_c
+
+        elif opt.GP_mode == 'div':
+            self.p = opt.p
+
+        elif opt.GP_mode == 'GP':
             self.GP_lambda = opt.GP_lambda
 
         else:
-            self.GP = False
+            raise NotImplementedError
 
         if opt.VGG:
             from models import VGG19
             self.VGG = True
-            self.VGGNet = VGG19()
+            self.VGGNet = VGG19().cuda(0) if opt.gpu_ids != -1 else VGG19()
             self.VGG_lambda = opt.VGG_lambda
-
-            if opt.gpu_ids != -1:
-                self.VGGNet = self.VGGNet.cuda(0)
-                self.VGG_weights = [1.0/32, 1.0/16, 1.0/8, 1.0/4, 1.0]
+            self.VGG_weights = [1.0 / 32, 1.0 / 16, 1.0 / 8, 1.0 / 4, 1.0]
 
         else:
             self.VGG = False
@@ -60,17 +59,13 @@ class Loss(object):
             CT += 0.1 * (real_features_1[i][-2] - real_features_2[i][-2]).mean()
             CT *= self.CT_lambda
             CT = torch.max(torch.tensor(0.0) if self.gpu_id == -1 else torch.tensor(0.0).cuda(0), CT - self.CT_factor)
-
         return CT
 
     def calc_FM(self, fake_features, real_features, weights=None):
+        weights = [1.0 for _ in range(len(real_features))] if not weights else weights
         FM = 0
-        if weights:
-            for i in range(len(real_features)):
-                FM += weights[i] * self.FM_criterion(fake_features[i], real_features[i].detach())
-        elif not weights:
-            for i in range(len(real_features)):
-                FM += self.FM_criterion(fake_features[i], real_features[i].detach())
+        for i in range(len(real_features)):
+            FM += weights[i] * self.FM_criterion(fake_features[i], real_features[i].detach())
         return FM
 
     def calc_GP(self, C, output, target):
@@ -83,7 +78,7 @@ class Loss(object):
 
         for i in range(self.n_C):
             interp_score = getattr(C, 'Scale_{}'.format(i))(interp)[-1]
-            weight_grid = torch.ones(interp_score.shape)
+            weight_grid = torch.ones_like(interp_score)
             weight_grid = weight_grid.cuda(0) if self.gpu_id != -1 else weight_grid
             gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=weight_grid,
                             create_graph=True, retain_graph=True, only_inputs=True)[0]
@@ -117,15 +112,8 @@ class LSGANLoss(Loss):
         self.progression = opt.progression
 
     def get_grid(self, tensor, is_real=True):
-        if is_real:
-            grid = torch.FloatTensor(tensor.shape).fill_(1.0)
-
-        elif not is_real:
-            grid = torch.FloatTensor(tensor.shape).fill_(0.0)
-
-        if self.gpu_id != -1:
-            grid = grid.cuda(0)
-
+        grid = torch.FloatTensor(tensor.shape).fill_(1.0 if is_real else 0.0)
+        grid = grid.cuda(0) if self.gpu_id != -1 else grid
         return grid
 
     def __call__(self, C, G, data_dict, level=None, level_in=None):
@@ -134,7 +122,6 @@ class LSGANLoss(Loss):
         package = {}
 
         input = data_dict['input_tensor']
-        # fake, residual_signals = G(x=input, level=level, level_in=level_in) if self.progression else G(input)
         fake = G(x=input, level=level, level_in=level_in) if self.progression else G(input)
         target = data_dict['target_tensor']
 
@@ -175,11 +162,7 @@ class LSGANLoss(Loss):
         else:
             package.update({'GP': 0.0})
 
-        if self.condition:
-            input_fake = torch.cat([input, fake], dim=1)
-
-        else:
-            input_fake = fake
+        input_fake = torch.cat([input, fake], dim=1) if self.condition else fake
 
         fake_features = C(input_fake, level, level_in) if self.progression else C(input_fake)
         G_score = 0
@@ -192,13 +175,8 @@ class LSGANLoss(Loss):
         if self.FM:
             FM = 0
             n_layers = len(fake_features[0])
-            if self.equal_FM_weights:
-                weights = [1.0 for i in range(n_layers)]
-            else:
-                weights = [1.0 for i in range(self.n_down)] + [2 ** -(i + 1) for i in range(self.n_RB_C)] + [1.0]
-
             for j in range(n_layers):
-                FM += weights[j] * self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
+                FM += self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
             loss_G += FM * self.FM_lambda / self.n_C
             package.update({'FM': FM.detach().item() / self.n_C})
         else:
@@ -223,28 +201,21 @@ class WGANLoss(Loss):
     def __init__(self, opt):
         super(WGANLoss, self).__init__(opt)
         self.condition = opt.C_condition
-        self.drift_lambda = opt.drift_lambda
-        self.drift_loss = opt.drift_loss
-        self.GP_lambda = opt.GP_lambda
+        self.GP_mode = opt.GP_mode
+
         self.gpu_id = opt.gpu_ids
         self.progression = opt.progression
 
-        if opt.Banach:
-            self.Banach = True
-            self.exponent = opt.exponent
-            self.dual_exponent = 1 / (1 - 1 / self.exponent) if self.exponent != 1 else np.inf
-            self.sobolev_s = opt.sobolev_s
-            self.sobolev_c = opt.sobolev_c
-
-        else:
-            self.Banach = False
+    def lp_norm(self, x, p=None, epsilon=1e-5):
+        x = x.view(x.shape[0], -1).type(torch.cuda.FloatTensor if self.gpu_id != -1 else torch.FloatTensor)
+        alpha, _ = torch.max(x.abs() + epsilon, dim=-1)
+        return alpha * torch.norm(x / alpha[:, None], p=p, dim=1)
 
     def sobolev_transform(self, x, dual=False):
-        real_x = x
-        imaginary_x = torch.zeros_like(x)
-        x_fft = torch.fft(torch.stack([real_x, imaginary_x], dim=-1), signal_ndim=2)
-        # x_fft[..., 0] stands for real part
-        # x_fft[..., 1] stands for imaginary part
+        real_x = x  # real part
+        imaginary_x = torch.zeros_like(x)  # imaginary part
+        x_fft = torch.fft(torch.stack([real_x, imaginary_x], dim=-1), signal_ndim=2)  # fourier transform
+
         dx = x_fft.shape[3]
         dy = x_fft.shape[2]
 
@@ -264,18 +235,12 @@ class WGANLoss(Loss):
         # computing the scale (1 + |\xi|^2)^{s/2}
         scale = (1 + self.sobolev_c * (X ** 2 + Y ** 2)) ** (self.sobolev_s / 2 if not dual else -self.sobolev_s / 2)
         # scale is a real number which scales both real and imaginary parts by multiplying
-        scale = torch.stack([scale, scale], dim=-1)
+        scale = torch.stack([scale, scale], dim=-1).float()
         scale = scale.cuda(0) if self.gpu_id != -1 else scale
-        x_fft *= scale.float()
+        x_fft *= scale
         return torch.ifft(x_fft, signal_ndim=2)[..., 0]  # only real part
 
-    def lp_norm(self, x, p=None, epsilon=1e-5):
-        x = x.view(x.shape[0], -1).type(torch.cuda.FloatTensor if self.gpu_id != -1 else torch.FloatTensor)
-        alpha, _ = torch.max(x.abs() + epsilon, dim=-1)
-        return alpha * torch.norm(x / alpha[:, None], p=p, dim=1)
-
     def get_constants(self, real):
-        real = real
         transformed_real = self.sobolev_transform(real).view([real.shape[0], -1])
         lamb = self.lp_norm(transformed_real, p=self.exponent).mean()
 
@@ -284,7 +249,7 @@ class WGANLoss(Loss):
         lamb, gamma = (lamb.cuda(0), gamma.cuda(0)) if self.gpu_id != -1 else (lamb, gamma)
         return lamb, gamma
 
-    def calc_GP(self, C, output, target, gamma=None):
+    def calc_GP(self, C, output, target, mode='GP'):
         GP = 0
         alpha = torch.FloatTensor(torch.rand((target.shape[0], 1, 1, 1))).expand(target.shape)
         alpha = alpha.cuda(0) if self.gpu_id != -1 else alpha
@@ -294,17 +259,24 @@ class WGANLoss(Loss):
 
         for i in range(self.n_C):
             interp_score = getattr(C, 'Scale_{}'.format(i))(interp)[-1]
-            weight_grid = torch.ones(interp_score.shape)
+            weight_grid = torch.ones_like(interp_score)
             weight_grid = weight_grid.cuda(0) if self.gpu_id != -1 else weight_grid
             gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=weight_grid,
                             create_graph=True, retain_graph=True, only_inputs=True)[0]
 
-            if self.Banach:
+            if mode == 'Banach':
+                lamb, gamma = self.get_constants(target)
                 dual_sobolev_gradient = self.sobolev_transform(gradient, dual=True)
-                GP += ((self.lp_norm(dual_sobolev_gradient, self.dual_exponent) / gamma - 1) ** 2).mean()
-            else:
+                GP += lamb * ((self.lp_norm(dual_sobolev_gradient, self.dual_exponent) / gamma - 1) ** 2).mean()
+            elif mode == 'Div':
                 gradient = gradient.view(gradient.shape[0], -1)
-                GP += ((gradient.norm(2, dim=1) - 1) ** 2).mean()
+                GP += -gradient.norm(self.p, dim=1).mean()
+            elif mode == 'GP':
+                gradient = gradient.view(gradient.shape[0], -1)
+                GP += self.GP_lambda * ((gradient.norm(2, dim=1) - 1) ** 2).mean()
+            else:
+                raise NotImplementedError("Invalid mode {}. Choose among [Banch, Div, GP].".format(mode))
+
             interp = nn.AvgPool2d(kernel_size=3, padding=1, stride=2, count_include_pad=False)(interp)
         return GP
 
@@ -335,14 +307,8 @@ class WGANLoss(Loss):
         package.update({"A_score": C_score.detach().item()})
 
         if self.GP:
-            if self.Banach:
-                lamb, gamma = self.get_constants(input_real)
-                print(lamb, gamma)
-                GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach(), gamma=gamma)
-                C_loss += lamb * GP
-            else:
-                GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach())
-                C_loss += self.GP_lambda * GP
+            GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach(), mode=self.GP_mode)
+            C_loss += GP
             package.update({'GP': GP.detach().item()})
         else:
             package.update({'GP': 0.0})
@@ -358,10 +324,8 @@ class WGANLoss(Loss):
         package.update({'total_A_loss': C_loss, 'A_state_dict': C.state_dict()})
 
         if current_step % self.n_critics == 0:
-            if self.condition:
-                input_fake = torch.cat([input, fake], dim=1)
-            else:
-                input_fake = fake
+
+            input_fake = torch.cat([input, fake], dim=1) if self.condition else fake
 
             fake_features = C(input_fake)
 
@@ -374,13 +338,9 @@ class WGANLoss(Loss):
             if self.FM:
                 FM = 0
                 n_layers = len(fake_features[0])
-                if self.equal_FM_weights:
-                    weights = [1.0 for i in range(n_layers)]
-                else:
-                    weights = [1.0 for i in range(self.n_down)] + [2 ** -(i + 1) for i in range(self.n_RB_C)] + [1.0]
 
                 for j in range(n_layers):
-                    FM += weights[j] * self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
+                    FM += self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
                 G_loss += FM * self.FM_lambda / self.n_C
                 package.update({'FM': FM.detach().item() / self.n_C})
             else:
@@ -398,5 +358,4 @@ class WGANLoss(Loss):
 
             package.update({'total_G_loss': G_loss, 'generated_tensor': fake.detach(),
                             'G_state_dict': G.state_dict(), 'target_tensor': target})
-
         return package

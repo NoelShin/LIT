@@ -30,6 +30,7 @@ class Loss(object):
             self.sobolev_c = opt.sobolev_c
 
         elif opt.GP_mode == 'div':
+            self.k = opt.k
             self.p = opt.p
 
         elif opt.GP_mode == 'GP':
@@ -268,14 +269,14 @@ class WGANLoss(Loss):
                 lamb, gamma = self.get_constants(target)
                 dual_sobolev_gradient = self.sobolev_transform(gradient, dual=True)
                 GP += lamb * ((self.lp_norm(dual_sobolev_gradient, self.dual_exponent) / gamma - 1) ** 2).mean()
-            elif mode == 'Div':
+            elif mode == 'div':
                 gradient = gradient.view(gradient.shape[0], -1)
-                GP += -gradient.norm(self.p, dim=1).mean()
+                GP += self.k * gradient.norm(self.p, dim=1).mean()
             elif mode == 'GP':
                 gradient = gradient.view(gradient.shape[0], -1)
                 GP += self.GP_lambda * ((gradient.norm(2, dim=1) - 1) ** 2).mean()
             else:
-                raise NotImplementedError("Invalid mode {}. Choose among [Banch, Div, GP].".format(mode))
+                raise NotImplementedError("Invalid mode {}. Choose among [Banch, div, GP].".format(mode))
 
             interp = nn.AvgPool2d(kernel_size=3, padding=1, stride=2, count_include_pad=False)(interp)
         return GP
@@ -301,17 +302,17 @@ class WGANLoss(Loss):
 
         C_score = 0
         for i in range(self.n_C):
-            C_score += (fake_features[i][-1] - real_features[i][-1]).mean()
-            C_score += self.drift_lambda * (real_features[i][-1].mean() ** 2) if self.drift_loss else 0
+            if self.GP_mode == 'div':
+                C_score += (-fake_features[i][-1] + real_features[i][-1]).mean()
+            else:
+                C_score += (fake_features[i][-1] - real_features[i][-1]).mean()
+            C_score += self.drift_lambda * (real_features[i][-1].mean() ** 2) if self.GP_mode == 'Banach' else 0
         C_loss += C_score
         package.update({"A_score": C_score.detach().item()})
 
-        if self.GP:
-            GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach(), mode=self.GP_mode)
-            C_loss += GP
-            package.update({'GP': GP.detach().item()})
-        else:
-            package.update({'GP': 0.0})
+        GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach(), mode=self.GP_mode)
+        C_loss += GP
+        package.update({'GP': GP.detach().item()})
 
         if self.CT:
             real_features_2 = C(input_fake)
@@ -331,7 +332,10 @@ class WGANLoss(Loss):
 
             G_score = 0
             for i in range(self.n_C):
-                G_score += -fake_features[i][-1].mean()
+                if self.GP_mode == 'div':
+                    G_score += fake_features[i][-1].mean()
+                else:
+                    G_score += -fake_features[i][-1].mean()
             G_loss += G_score
             package.update({'G_score': G_score.detach().item()})
 

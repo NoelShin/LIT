@@ -49,27 +49,34 @@ class BaseOption(object):
                                  help='if you want to use boundary map')
         self.parser.add_argument('--reduction_rate', type=int, default=16)
 
-        # about C
-        self.parser.add_argument('--Banach', action='store_true', default=True, help='Banach Wasserstein GAN')
+        # Basic GAN option
+        self.parser.add_argument('--GAN_type', type=str, default='WGAN', help='[LSGAN, WGAN]')
+        self.parser.add_argument('--GP_lambda', type=int, default=10, help='weight for gradient penalty')
+        self.parser.add_argument('--GP_mode', type=str, default='div', help='[Banach, div, GP]')
+
+        # about Banach Wasserstein GAN (BWGAN)
+        self.parser.add_argument('--drift_lambda', type=float, default=1e-5, help='weight for drift loss')
+        self.parser.add_argument('--drift_loss', action='store_true', default=True, help='drift loss switch')
         self.parser.add_argument('--exponent', type=float, default=4.0, help='Exponent of norm')
         self.parser.add_argument('--sobolev_c', type=float, default=5.0)
         self.parser.add_argument('--sobolev_s', type=float, default=0.0)
+
+        # about Consistenty Term Wasserstein GAN (CTGAN)
+        self.parser.add_argument('--CT', action='store_true', default=False, help='CTGAN switch')
+        self.parser.add_argument('--CT_factor', type=float, default=0.2, help='factor for CT term')
+        self.parser.add_argument('--CT_lambda', type=int, default=2, help='weight for CT term')
+
+        # about Wasserstein-div GAN (WGAN-div)
+        self.parser.add_argument('--k', type=int, default=2, help='weight for div term')
+        self.parser.add_argument('--p', type=int, default=6, help='p-norm for gradient')
+
         self.parser.add_argument('--C_condition', action='store_true', default=True, help='whether to condition Critic')
         self.parser.add_argument('--C_norm', action='store_true', default=True,
                                  help='whether to use norm layer in Critic')
-        self.parser.add_argument('--CT', action='store_true', default=False)
-        self.parser.add_argument('--CT_factor', type=float, default=0.2)
-        self.parser.add_argument('--CT_lambda', type=int, default=2)
-        self.parser.add_argument('--drift_loss', action='store_true', default=True)
-        self.parser.add_argument('--drift_lambda', type=float, default=1e-5)
-        self.parser.add_argument('--GAN_type', type=str, default='WGAN', help='[LSGAN, WGAN]')
-        self.parser.add_argument('--GP', action='store_true', default=True, help='if you want to add GP for GANs')
-        self.parser.add_argument('--GP_lambda', type=float, default=0.0, help='weight for gradient penalty')
-        self.parser.add_argument('--Res_C', action='store_true', default=False)
+
         self.parser.add_argument('--max_ch_C', type=int, default=2 ** 9, help='max nb of channels in critic')
-        self.parser.add_argument('--n_critics', type=int, default=1)
-        self.parser.add_argument('--n_downsample_C', type=int, default=3)
-        self.parser.add_argument('--n_RB_C', type=int, default=2)
+        self.parser.add_argument('--n_critics', type=int, default=1, help='how many C updates per G update')
+        self.parser.add_argument('--n_downsample_C', type=int, default=4)
         self.parser.add_argument('--pad_type_C', type=str, default='zero')
 
     def parse(self):

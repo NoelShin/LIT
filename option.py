@@ -7,7 +7,7 @@ class BaseOption(object):
         self.parser = argparse.ArgumentParser()
 
         self.parser.add_argument('--debug', action='store_true', default=False, help='for checking code')
-        self.parser.add_argument('--gpu_ids', type=int, default=2, help='gpu number. If -1, use cpu')
+        self.parser.add_argument('--gpu_ids', type=int, default=3, help='gpu number. If -1, use cpu')
 
         self.parser.add_argument('--batch_size', type=int, default=1, help='the number of batch_size')
         self.parser.add_argument('--block_weight', action='store_true', default=False, help='learnable block weights')
@@ -24,7 +24,7 @@ class BaseOption(object):
         self.parser.add_argument('--max_ch_G', type=int, default=2 ** 10, help='max nb of channels in generator')
         self.parser.add_argument('--norm_type', type=str, default='InstanceNorm2d',
                                  help='[BatchNorm2d, InstanceNorm2d, PixelNorm]')
-        self.parser.add_argument('--n_workers', type=int, default=2, help='how many threads you want to use')
+        self.parser.add_argument('--n_workers', type=int, default=0, help='how many threads you want to use')
 
         # about RIR
         self.parser.add_argument('--n_groups', type=int, default=4, help='the number of residual groups')
@@ -50,17 +50,21 @@ class BaseOption(object):
         self.parser.add_argument('--reduction_rate', type=int, default=16)
 
         # about C
+        self.parser.add_argument('--Banach', action='store_true', default=True, help='Banach Wasserstein GAN')
+        self.parser.add_argument('--exponent', type=float, default=4.0, help='Exponent of norm')
+        self.parser.add_argument('--sobolev_c', type=float, default=5.0)
+        self.parser.add_argument('--sobolev_s', type=float, default=0.0)
         self.parser.add_argument('--C_condition', action='store_true', default=True, help='whether to condition Critic')
         self.parser.add_argument('--C_norm', action='store_true', default=True,
                                  help='whether to use norm layer in Critic')
         self.parser.add_argument('--CT', action='store_true', default=False)
         self.parser.add_argument('--CT_factor', type=float, default=0.2)
         self.parser.add_argument('--CT_lambda', type=int, default=2)
-        self.parser.add_argument('--drift_loss', action='store_true', default=False)
-        self.parser.add_argument('--drift_lambda', type=float, default=0.001)
-        self.parser.add_argument('--GAN_type', type=str, default='LSGAN', help='[LSGAN, WGAN]')
+        self.parser.add_argument('--drift_loss', action='store_true', default=True)
+        self.parser.add_argument('--drift_lambda', type=float, default=1e-5)
+        self.parser.add_argument('--GAN_type', type=str, default='WGAN', help='[LSGAN, WGAN]')
         self.parser.add_argument('--GP', action='store_true', default=True, help='if you want to add GP for GANs')
-        self.parser.add_argument('--GP_lambda', type=float, default=0.001, help='weight for gradient penalty')
+        self.parser.add_argument('--GP_lambda', type=float, default=0.0, help='weight for gradient penalty')
         self.parser.add_argument('--Res_C', action='store_true', default=False)
         self.parser.add_argument('--max_ch_C', type=int, default=2 ** 9, help='max nb of channels in critic')
         self.parser.add_argument('--n_critics', type=int, default=1)

@@ -60,14 +60,12 @@ class CustomDataset(torch.utils.data.Dataset):
 
     def get_transform(self, normalize=False, level_size=False):
         transform_list = []
-
-        if not level_size:
-            transform_list += [transforms.Resize(self.image_size, interpolation=Image.NEAREST)]
-
-        elif level_size:
+        if level_size:
             transform_list += [transforms.Resize((2 ** int((np.log2(self.min_image_size[0]) + self.level)),
                                                   2 ** int(np.log2(self.min_image_size[1]) + self.level)),
                                                  interpolation=Image.NEAREST)]
+        else:
+            transform_list += [transforms.Resize(self.image_size, interpolation=Image.NEAREST)]
 
         if self.is_train and self.coin:
             transform_list.append(transforms.Lambda(lambda x: self.__flip(x)))
@@ -76,7 +74,6 @@ class CustomDataset(torch.utils.data.Dataset):
 
         if normalize:
             transform_list.append(transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)))
-
         return transforms.Compose(transform_list)
 
     @staticmethod
@@ -128,7 +125,7 @@ class CustomDataset(torch.utils.data.Dataset):
 
             data_dict = {'input_tensor': input_tensor, 'target_tensor': target_tensor}
 
-            if self.progression or self.condition:
+            if self.progression and self.condition:
                 C_label_tensor = self.get_transform(level_size=True)(label_array) * 255.0
                 C_instance_tensor = self.get_transform(level_size=True)(instance_array)
                 C_input_tensor = self.encode_input(C_label_tensor, C_instance_tensor)
@@ -146,15 +143,12 @@ class CustomDataset(torch.utils.data.Dataset):
 
             data_dict = {'input_tensor': input_tensor, 'target_tensor': target_tensor}
 
-            if self.progression or self.condition:
+            if self.progression and self.condition:
                 C_label_tensor = self.get_transform(normalize=True, level_size=True)(label_array)
                 C_input_tensor = self.encode_input(C_label_tensor)
-
                 data_dict.update({'C_input_tensor': C_input_tensor})
-
         else:
             raise NotImplementedError("Please check dataset_name. It should be in ['Cityscapes', 'Custom'].")
-
         return data_dict
 
     def __len__(self):

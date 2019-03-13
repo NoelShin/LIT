@@ -19,7 +19,12 @@ if __name__ == '__main__':
     if opt.GAN_type == 'LSGAN':
         from loss import LSGANLoss as Loss
     elif opt.GAN_type == 'WGAN':
-        from loss import WGANLoss as Loss
+        if opt.GP_mode == 'Banach':
+            from loss import BWGANLoss as Loss
+        elif opt.GP_mode == 'div':
+            from loss import WGANDivLoss as Loss
+        elif opt.GP_mode == 'GP':
+            from loss import WGANLoss as Loss
 
     manager = Manager(opt)
 

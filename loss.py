@@ -60,7 +60,7 @@ class Loss(object):
         for i in range(self.n_C):
             CT += ((real_features_1[i][-1] - real_features_2[i][-1]) ** 2).mean()
             CT += 0.1 * ((real_features_1[i][-2] - real_features_2[i][-2]) ** 2).mean()
-            CT = torch.max(torch.tensor(0.0) if self.USE_CUDA else torch.tensor(0.0).cuda(0), CT - self.CT_factor)
+            CT = torch.max(torch.tensor(0.0).cuda(0) if self.USE_CUDA else torch.tensor(0.0), CT - self.CT_factor)
         return CT
 
     def calc_FM(self, fake_features, real_features, weights=None):
@@ -104,7 +104,7 @@ class Loss(object):
 
 class BWGANLoss(Loss):
     def __init__(self, opt):
-        super(BWGAN, self).__init__(opt)
+        super(BWGANLoss, self).__init__(opt)
 
     def lp_norm(self, x, p=None, epsilon=1e-5):
         x = x.view(x.shape[0], -1).type(torch.cuda.FloatTensor if self.USE_CUDA else torch.FloatTensor)
@@ -161,7 +161,6 @@ class BWGANLoss(Loss):
         if self.condition and self.progression:
             input = data_dict['C_input_tensor']
             input_fake, input_real = torch.cat([input, fake.detach()], dim=1), torch.cat([input, target], dim=1)
-
         elif self.condition and not self.progression:
             input_fake, input_real = torch.cat([input, fake.detach()], dim=1), torch.cat([input, target], dim=1)
         else:
@@ -177,9 +176,10 @@ class BWGANLoss(Loss):
         loss_C += score_C
 
         GP = 0
-        alpha = torch.FloatTensor(torch.rand((target.shape[0], 1, 1, 1))).expand(target.shape)
+        alpha = torch.FloatTensor(torch.rand((input_real.shape[0], 1, 1, 1))).expand(input_real.shape)
         alpha = alpha.cuda(0) if self.USE_CUDA else alpha
-        interp = (target + alpha * (fake.detach() - target)).requires_grad_(True)
+        interp = (input_real + alpha * (input_fake.detach() - input_real)).requires_grad_(True)
+
         for i in range(self.n_C):
             interp_score = getattr(C, 'Scale_{}'.format(i))(interp)[-1]
             weight_grid = torch.ones_like(interp_score).cuda(0) if self.USE_CUDA else torch.ones_like(interp_score)
@@ -222,7 +222,8 @@ class BWGANLoss(Loss):
                 package.update({'VGG': 0.0})
 
             package.update({'total_G_loss': loss_G, 'generated_tensor': fake.detach(),
-                            'G_state_dict': G.state_dict(), 'target_tensor': target})
+                            'G_state_dict': G.state_dict(), 'target_tensor': target, 'CT': 0.0})
+        return package
 
 
 class LSGANLoss(Loss):
@@ -266,7 +267,7 @@ class LSGANLoss(Loss):
         package.update({'A_score': C_score.detach().item()})
 
         if self.CT:
-            real_features_2 = C(input_fake)
+            real_features_2 = C(input_real)
             CT = self.CT_lambda * self.calc_CT(real_features, real_features_2)
             loss_C += CT
             package.update({'CT': CT.detach().item()})
@@ -318,7 +319,7 @@ class WGANLoss(Loss):
         super(WGANLoss, self).__init__(opt)
         self.GP_mode = opt.GP_mode
 
-    def calc_GP(self, C, output, target, mode='GP'):
+    def calc_GP(self, C, output, target):
         GP = 0
         alpha = torch.FloatTensor(torch.rand((target.shape[0], 1, 1, 1))).expand(target.shape)
         alpha = alpha.cuda(0) if self.USE_CUDA else alpha
@@ -327,20 +328,12 @@ class WGANLoss(Loss):
 
         for i in range(self.n_C):
             interp_score = getattr(C, 'Scale_{}'.format(i))(interp)[-1]
-            weight_grid = torch.ones_like(interp_score)
-            weight_grid = weight_grid.cuda(0) if self.USE_CUDA else weight_grid
+            weight_grid = torch.ones_like(interp_score).cuda(0) if self.USE_CUDA else torch.ones_like(interp_score)
             gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=weight_grid,
                             create_graph=True, retain_graph=True, only_inputs=True)[0]
 
-            if mode == 'div':
-                gradient = gradient.view(gradient.shape[0], -1)
-                GP += self.k * gradient.norm(self.p, dim=1).mean()
-            elif mode == 'GP':
-                gradient = gradient.view(gradient.shape[0], -1)
-                GP += self.GP_lambda * ((gradient.norm(2, dim=1) - 1) ** 2).mean()
-            else:
-                raise NotImplementedError("Invalid mode {}. Choose among [div, GP].".format(mode))
-
+            gradient = gradient.view(gradient.shape[0], -1)
+            GP += ((gradient.norm(2, dim=-1) - 1) ** 2).mean()
             interp = nn.AvgPool2d(kernel_size=3, padding=1, stride=2, count_include_pad=False)(interp)
         return GP
 
@@ -360,21 +353,19 @@ class WGANLoss(Loss):
         else:
             input_fake, input_real = fake.detach(), target
 
-        fake_features = C(input_fake)
-        real_features = C(input_real)
+        fake_features, real_features = C(input_fake), C(input_real)
 
         C_score = 0
         for i in range(self.n_C):
             C_score += (fake_features[i][-1] - real_features[i][-1]).mean()
         loss_C += C_score
 
-        GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach(), mode=self.GP_mode)
-        loss_C += GP
+        GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach())
+        loss_C += self.GP_lambda * GP
 
         if self.CT:
-            real_features_2 = C(input_fake)
-            CT = self.calc_CT(real_features, real_features_2)
-            loss_C += CT
+            CT = self.calc_CT(real_features, C(input_real))
+            loss_C += self.CT_lambda * CT
             package.update({'CT': CT.detach().item()})
         else:
             package.update({'CT': 0.0})
@@ -385,14 +376,12 @@ class WGANLoss(Loss):
         if current_step % self.n_critics == 0:
 
             input_fake = torch.cat([input, fake], dim=1) if self.condition else fake
-
             fake_features = C(input_fake)
 
             G_score = 0
             for i in range(self.n_C):
                 G_score += -fake_features[i][-1].mean()
             loss_G += G_score
-            package.update({'G_score': G_score.detach().item()})
 
             if self.FM:
                 FM = 0
@@ -400,7 +389,7 @@ class WGANLoss(Loss):
 
                 for j in range(n_layers):
                     FM += self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
-                loss_G += FM * self.FM_lambda / self.n_C
+                loss_G += self.FM_lambda * FM / self.n_C
                 package.update({'FM': FM.detach().item() / self.n_C})
             else:
                 package.update({'FM': 0.0})
@@ -413,8 +402,8 @@ class WGANLoss(Loss):
             else:
                 package.update({'VGG': 0.0})
 
-            package.update({'total_G_loss': loss_G, 'generated_tensor': fake.detach(),
-                            'G_state_dict': G.state_dict(), 'target_tensor': target})
+            package.update({'G_score': G_score.detach().item(), 'total_G_loss': loss_G,
+                            'generated_tensor': fake.detach(), 'G_state_dict': G.state_dict(), 'target_tensor': target})
         return package
 
 
@@ -461,10 +450,10 @@ class WGANDivLoss(Loss):
         C_score = 0
         for i in range(self.n_C):
             C_score += (-fake_features[i][-1] + real_features[i][-1]).mean()
-        loss_C += self.k * C_score
+        loss_C += C_score
 
         GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach())
-        loss_C += GP
+        loss_C += self.k * GP
 
         package.update({"A_score": C_score.detach().item(), 'GP': GP.detach().item(), 'total_A_loss': loss_C,
                         'A_state_dict': C.state_dict()})

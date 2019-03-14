@@ -11,20 +11,18 @@ if __name__ == '__main__':
     if opt.progression:
         from models import ProgressiveGenerator as Generator
         from models import ProgressivePatchCritic as Adversarial
-
     else:
         from models import Generator
         from models import Critic as Adversarial
 
     if opt.GAN_type == 'LSGAN':
-        from loss import LSGANLoss as Loss
-    elif opt.GAN_type == 'WGAN':
-        if opt.GP_mode == 'Banach':
-            from loss import BWGANLoss as Loss
-        elif opt.GP_mode == 'div':
-            from loss import WGANDivLoss as Loss
-        elif opt.GP_mode == 'GP':
-            from loss import WGANLoss as Loss
+        from losses.base_loss import LSGANLoss as Loss
+    elif opt.GAN_type == 'BWGAN':
+        from losses.BWGANLoss import BWGANLoss as Loss
+    elif opt.GAN_type == 'WGANDiv':
+        from losses.WGANDivLoss import WGANDivLoss as Loss
+    elif opt.GAN_type == 'WGANGP':
+        from losses.WGANGPLoss import WGANGPLoss as Loss
 
     manager = Manager(opt)
 
@@ -50,7 +48,10 @@ if __name__ == '__main__':
     A_optim = torch.optim.Adam(A.parameters(), lr=opt.lr, betas=(opt.beta1, opt.beta2), eps=opt.eps)
 
     current_step = 0
+    epoch_decay = opt.epoch_decay
     lr = opt.lr
+    n_critics = opt.n_critics
+    n_epochs = opt.n_epochs
     n_epochs_per_lod = opt.n_epochs_per_lod
     n_iter_per_lod = n_epochs_per_lod * opt.n_data
     nb_transition = n_iter_per_lod / 2
@@ -99,7 +100,7 @@ if __name__ == '__main__':
         data_loader = torch.utils.data.DataLoader(dataset=dataset, batch_size=opt.batch_size, num_workers=opt.n_workers,
                                                   shuffle=opt.shuffle)
 
-        for epoch in range(opt.n_epochs):
+        for epoch in range(n_epochs):
             for i, data_dict in enumerate(data_loader):
                 package = {'Epoch': epoch + 1}
                 time = datetime.datetime.now()
@@ -115,7 +116,7 @@ if __name__ == '__main__':
                 package['total_A_loss'].backward()
                 A_optim.step()
 
-                if current_step % opt.n_critics == 0:
+                if current_step % n_critics == 0:
                     G_optim.zero_grad()
                     package['total_G_loss'].backward()
                     G_optim.step()
@@ -127,7 +128,7 @@ if __name__ == '__main__':
                     break
 
             manager.layer_magnitude(G, epoch + 1)
-            if epoch > opt.epoch_decay:
+            if epoch > epoch_decay:
                 lr = update_lr(lr, opt.n_epochs - opt.epoch_decay, A_optim, G_optim)
 
     print("Total time taken: ", datetime.datetime.now() - start_time)

@@ -50,9 +50,8 @@ class BaseOption(object):
         self.parser.add_argument('--reduction_rate', type=int, default=16)
 
         # Basic GAN option
-        self.parser.add_argument('--GAN_type', type=str, default='WGAN', help='[LSGAN, WGAN]')
+        self.parser.add_argument('--GAN_type', type=str, default='WGAN', help='[BWGAN, LSGAN, WGANDiv, WGANGP]')
         self.parser.add_argument('--GP_lambda', type=int, default=10, help='weight for gradient penalty')
-        self.parser.add_argument('--GP_mode', type=str, default='div', help='[Banach, div, GP]')
 
         # about Banach Wasserstein GAN (BWGAN)
         self.parser.add_argument('--drift_lambda', type=float, default=1e-5, help='weight for drift loss')

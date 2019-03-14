@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from base_loss import Loss
+from .base_loss import Loss
 
 
 class LSGANLoss(Loss):

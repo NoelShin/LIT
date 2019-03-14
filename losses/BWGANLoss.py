@@ -122,3 +122,4 @@ class BWGANLoss(Loss):
                             'generated_tensor': fake.detach(), 'G_state_dict': G.state_dict(), 'target_tensor': target,
                             'CT': 0.0})
         return package
+    

@@ -98,7 +98,6 @@ def configure(opt):
     opt.analysis_dir = os.path.join('./checkpoints', dataset_name, model_name, 'Analysis')
     opt.image_dir = os.path.join('./checkpoints', dataset_name, model_name,  'Image', '{}'.format('Training' if is_train
                                                                                                   else 'Test'))
-
     opt.model_dir = os.path.join('./checkpoints', dataset_name, model_name, 'Model')
     log_path = os.path.join(opt.model_dir, 'opt.txt')
 

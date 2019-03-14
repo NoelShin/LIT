@@ -153,7 +153,7 @@ class PatchCritic(nn.Module):
             blocks += [[nn.Conv2d(8 * n_df, 1, kernel_size=4, padding=1)]]
 
         self.CT = opt.CT
-        self.dropout = nn.Dropout2d(p=0.5, inplace=False) if opt.CT else None
+        self.dropout = nn.Dropout2d(p=0.4, inplace=False) if opt.CT else None
         self.GAN_type = opt.GAN_type
         self.n_blocks = len(blocks)
         for i in range(self.n_blocks):

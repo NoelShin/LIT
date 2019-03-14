@@ -1,14 +1,15 @@
 import torch
 import torch.nn as nn
 from torch.autograd import grad
-from base_loss import Loss
+from .base_loss import Loss
 
 
 class BWGANLoss(Loss):
     def __init__(self, opt):
         super(BWGANLoss, self).__init__(opt)
 
-    def lp_norm(self, x, p=None, epsilon=1e-5):
+    @staticmethod
+    def lp_norm(x, p=None, epsilon=1e-5):
         x = x.view(x.shape[0], -1)
         alpha, _ = torch.max(x.abs() + epsilon, dim=-1)
         return alpha * torch.norm(x / alpha[:, None], p=p, dim=1)
@@ -43,10 +44,12 @@ class BWGANLoss(Loss):
 
     def get_constants(self, real):
         transformed_real = self.sobolev_filter(real).view([real.shape[0], -1])
-        lamb = self.lp_norm(transformed_real, p=self.exponent).mean()
+        # lamb = self.lp_norm(transformed_real, p=self.exponent).mean()
+        lamb = torch.norm(transformed_real, p=self.exponent, dim=-1).mean()
 
         dual_transformed_real = self.sobolev_filter(real, dual=True).view([real.shape[0], -1])
-        gamma = self.lp_norm(dual_transformed_real, p=self.dual_exponent).mean()
+        # gamma = self.lp_norm(dual_transformed_real, p=self.dual_exponent).mean()
+        gamma = torch.norm(dual_transformed_real, p=self.dual_exponent, dim=-1).mean()
         lamb, gamma = (lamb.cuda(0), gamma.cuda(0)) if self.USE_CUDA else (lamb, gamma)
         return lamb, gamma
 
@@ -71,7 +74,7 @@ class BWGANLoss(Loss):
 
         score_C = 0
         for i in range(self.n_C):
-            score_C += (real_features[i][-1] - fake_features[i][-1]).mean() / gamma
+            score_C += (real_features[i][-1].mean() - fake_features[i][-1].mean()) / gamma
             score_C += self.drift_lambda * (real_features[i][-1].mean() ** 2)
         loss_C += score_C
 
@@ -85,9 +88,9 @@ class BWGANLoss(Loss):
             weight_grid = torch.ones_like(interp_score).cuda(0) if self.USE_CUDA else torch.ones_like(interp_score)
             gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=weight_grid,
                             create_graph=True, retain_graph=True, only_inputs=True)[0]
-            GP += ((self.lp_norm(self.sobolev_filter(gradient, dual=True), self.dual_exponent) / gamma - 1) ** 2).mean()
+            # GP += ((self.lp_norm(self.sobolev_filter(gradient, dual=True), self.dual_exponent) / gamma - 1) ** 2).mean()
+            GP += ((torch.norm(self.sobolev_filter(gradient, dual=True), p=self.dual_exponent, dim=-1) / gamma - 1) ** 2).mean()
             interp = nn.AvgPool2d(kernel_size=3, padding=1, stride=2, count_include_pad=False)(interp)
-
         loss_C += lamb * GP
 
         if current_step % self.n_critics == 0:
@@ -122,4 +125,3 @@ class BWGANLoss(Loss):
                             'generated_tensor': fake.detach(), 'G_state_dict': G.state_dict(), 'target_tensor': target,
                             'CT': 0.0})
         return package
-    

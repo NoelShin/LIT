@@ -1,13 +1,12 @@
 import torch
 import torch.nn as nn
 from torch.autograd import grad
-from base_loss import Loss
+from .base_loss import Loss
 
 
 class WGANGPLoss(Loss):
     def __init__(self, opt):
         super(WGANGPLoss, self).__init__(opt)
-        self.GP_mode = opt.GP_mode
 
     def calc_GP(self, C, output, target):
         GP = 0
@@ -47,7 +46,7 @@ class WGANGPLoss(Loss):
 
         C_score = 0
         for i in range(self.n_C):
-            C_score += (fake_features[i][-1] - real_features[i][-1]).mean()
+            C_score += fake_features[i][-1].mean() - real_features[i][-1].mean()
         loss_C += C_score
 
         GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach())
@@ -95,4 +94,4 @@ class WGANGPLoss(Loss):
             package.update({'G_score': G_score.detach().item(), 'total_G_loss': loss_G,
                             'generated_tensor': fake.detach(), 'G_state_dict': G.state_dict(), 'target_tensor': target})
         return package
-    
+

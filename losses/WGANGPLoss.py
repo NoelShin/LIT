@@ -95,3 +95,4 @@ class WGANGPLoss(Loss):
             package.update({'G_score': G_score.detach().item(), 'total_G_loss': loss_G,
                             'generated_tensor': fake.detach(), 'G_state_dict': G.state_dict(), 'target_tensor': target})
         return package
+    

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import grad
-from base_loss import Loss
+from .base_loss import Loss
 
 
 class WGANDivLoss(Loss):
@@ -10,15 +10,13 @@ class WGANDivLoss(Loss):
 
     def calc_GP(self, C, output, target):
         GP = 0
-        alpha = torch.FloatTensor(torch.rand((target.shape[0], 1, 1, 1))).expand(target.shape)
-        alpha = alpha.cuda(0) if self.USE_CUDA else alpha
+        alpha = torch.FloatTensor(torch.rand((target.shape[0], 1, 1, 1))).expand(target.shape).to(self.device)
 
         interp = (target + alpha * (output - target)).requires_grad_(True)
 
         for i in range(self.n_C):
             interp_score = getattr(C, 'Scale_{}'.format(i))(interp)[-1]
-            weight_grid = torch.ones_like(interp_score)
-            weight_grid = weight_grid.cuda(0) if self.USE_CUDA else weight_grid
+            weight_grid = torch.ones_like(interp_score).to(self.device)
             gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=weight_grid,
                             create_graph=True, retain_graph=True, only_inputs=True)[0]
             gradient = gradient.view(gradient.shape[0], -1)
@@ -46,7 +44,7 @@ class WGANDivLoss(Loss):
 
         C_score = 0
         for i in range(self.n_C):
-            C_score += (-fake_features[i][-1] + real_features[i][-1]).mean()
+            C_score += -fake_features[i][-1].mean() + real_features[i][-1].mean()
         loss_C += C_score
 
         GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach())

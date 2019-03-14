@@ -81,6 +81,8 @@ def configure(opt):
     args.append(opt.n_blocks)
     args.append(opt.GAN_type)
     args.append('Banach') if opt.GP_mode == 'Banach' else None
+    args.append(opt.sobolev_s) if opt.GP_mode == 'Banach' else None
+    args.append(opt.exponent) if opt.GP_mode == 'Banach' else None
     args.append('div') if opt.GP_mode == 'div' else None
     args.append('GP') if opt.GP_mode == 'GP' else None
     args.append('CT') if opt.CT and opt.GAN_type == 'WGAN' else None

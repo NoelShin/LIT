@@ -107,7 +107,7 @@ class BWGANLoss(Loss):
         super(BWGANLoss, self).__init__(opt)
 
     def lp_norm(self, x, p=None, epsilon=1e-5):
-        x = x.view(x.shape[0], -1).type(torch.cuda.FloatTensor if self.USE_CUDA else torch.FloatTensor)
+        x = x.view(x.shape[0], -1)
         alpha, _ = torch.max(x.abs() + epsilon, dim=-1)
         return alpha * torch.norm(x / alpha[:, None], p=p, dim=1)
 
@@ -115,7 +115,6 @@ class BWGANLoss(Loss):
         real_x = x  # real part
         imaginary_x = torch.zeros_like(x)  # imaginary part
         x_fft = torch.fft(torch.stack([real_x, imaginary_x], dim=-1), signal_ndim=2)  # fourier transform
-
         dx = x_fft.shape[3]
         dy = x_fft.shape[2]
 
@@ -154,9 +153,8 @@ class BWGANLoss(Loss):
         loss_G = 0
         package = dict()
 
-        input = data_dict['input_tensor']
+        input, target = data_dict['input_tensor'], data_dict['target_tensor']
         fake = G(input, level=level, level_in=level_in) if self.progression else G(input)
-        target = data_dict['target_tensor']
 
         if self.condition and self.progression:
             input = data_dict['C_input_tensor']
@@ -186,12 +184,9 @@ class BWGANLoss(Loss):
             gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=weight_grid,
                             create_graph=True, retain_graph=True, only_inputs=True)[0]
             GP += ((self.lp_norm(self.sobolev_filter(gradient, dual=True), self.dual_exponent) / gamma - 1) ** 2).mean()
-
             interp = nn.AvgPool2d(kernel_size=3, padding=1, stride=2, count_include_pad=False)(interp)
 
         loss_C += lamb * GP
-        package.update({'A_score': score_C.detach().item(), 'GP': GP.detach().item(), 'total_A_loss': loss_C,
-                        'A_state_dict': C.state_dict()})
 
         if current_step % self.n_critics == 0:
             input_fake = torch.cat([input, fake], dim=1) if self.condition else fake
@@ -202,7 +197,6 @@ class BWGANLoss(Loss):
             for i in range(self.n_C):
                 G_score += fake_features[i][-1].mean()
             loss_G += G_score / gamma
-            package.update({'G_score': G_score.detach().item()})
 
             if self.FM:
                 FM = 0
@@ -221,8 +215,10 @@ class BWGANLoss(Loss):
             else:
                 package.update({'VGG': 0.0})
 
-            package.update({'total_G_loss': loss_G, 'generated_tensor': fake.detach(),
-                            'G_state_dict': G.state_dict(), 'target_tensor': target, 'CT': 0.0})
+            package.update({'A_score': score_C.detach().item(), 'GP': GP.detach().item(), 'total_A_loss': loss_C,
+                            'A_state_dict': C.state_dict(), 'G_score': G_score.detach().item(), 'total_G_loss': loss_G,
+                            'generated_tensor': fake.detach(), 'G_state_dict': G.state_dict(), 'target_tensor': target,
+                            'CT': 0.0})
         return package
 
 
@@ -264,7 +260,6 @@ class LSGANLoss(Loss):
             C_score *= 0.5
 
         loss_C += C_score
-        package.update({'A_score': C_score.detach().item()})
 
         if self.CT:
             real_features_2 = C(input_real)
@@ -289,7 +284,6 @@ class LSGANLoss(Loss):
             real_grid = self.get_grid(fake_features[i][-1], True)
             G_score += self.criterion(fake_features[i][-1], real_grid)
         loss_G += G_score
-        package.update({'G_score': G_score.detach().item()})
 
         if self.FM:
             FM = 0
@@ -309,8 +303,9 @@ class LSGANLoss(Loss):
         else:
             package.update({'VGG': 0.0})
 
-        package.update({'total_A_loss': loss_C, 'total_G_loss': loss_G, 'generated_tensor': fake.detach(),
-                        'A_state_dict': C.state_dict(), 'G_state_dict': G.state_dict(), 'target_tensor': target})
+        package.update({'A_score': C_score.detach().item(), 'G_score': G_score.detach().item(), 'total_A_loss': loss_C,
+                        'total_G_loss': loss_G, 'generated_tensor': fake.detach(), 'A_state_dict': C.state_dict(),
+                        'G_state_dict': G.state_dict(), 'target_tensor': target})
         return package
 
 
@@ -370,7 +365,7 @@ class WGANLoss(Loss):
         else:
             package.update({'CT': 0.0})
 
-        package.update({"A_score": C_score.detach().item(), 'GP': GP.detach().item(), 'total_A_loss': loss_C,
+        package.update({'A_score': C_score.detach().item(), 'GP': GP.detach().item(), 'total_A_loss': loss_C,
                         'A_state_dict': C.state_dict()})
 
         if current_step % self.n_critics == 0:
@@ -454,10 +449,8 @@ class WGANDivLoss(Loss):
 
         GP = self.calc_GP(C, output=input_fake.detach(), target=input_real.detach())
         loss_C += self.k * GP
-
         package.update({"A_score": C_score.detach().item(), 'GP': GP.detach().item(), 'total_A_loss': loss_C,
-                        'A_state_dict': C.state_dict()})
-
+                            'A_state_dict': C.state_dict()})
         if current_step % self.n_critics == 0:
 
             input_fake = torch.cat([input, fake], dim=1) if self.condition else fake
@@ -468,7 +461,6 @@ class WGANDivLoss(Loss):
             for i in range(self.n_C):
                 G_score += fake_features[i][-1].mean()
             loss_G += G_score
-            package.update({'G_score': G_score.detach().item()})
 
             if self.FM:
                 FM = 0
@@ -487,6 +479,6 @@ class WGANDivLoss(Loss):
             else:
                 package.update({'VGG': 0.0})
 
-            package.update({'total_G_loss': loss_G, 'generated_tensor': fake.detach(),
-                            'G_state_dict': G.state_dict(), 'target_tensor': target})
+            package.update({'G_score': G_score.detach().item(), 'total_G_loss': loss_G,
+                           'generated_tensor': fake.detach(), 'G_state_dict': G.state_dict(), 'target_tensor': target})
         return package

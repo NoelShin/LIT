@@ -37,20 +37,19 @@ class BWGANLoss(Loss):
         # computing the scale (1 + |\xi|^2)^{s/2}
         scale = (1 + self.sobolev_c * (X ** 2 + Y ** 2)) ** (self.sobolev_s / 2 if not dual else -self.sobolev_s / 2)
         # scale is a real number which scales both real and imaginary parts by multiplying
-        scale = torch.stack([scale, scale], dim=-1).float()
-        scale = scale.cuda(0) if self.USE_CUDA else scale
+        scale = torch.stack([scale, scale], dim=-1)
+        scale = scale.to(self.device)
         x_fft *= scale
         return torch.ifft(x_fft, signal_ndim=2)[..., 0]  # only real part
 
     def get_constants(self, real):
-        transformed_real = self.sobolev_filter(real).view([real.shape[0], -1])
+        transformed_real = self.sobolev_filter(real).view(real.shape[0], -1)
         # lamb = self.lp_norm(transformed_real, p=self.exponent).mean()
-        lamb = torch.norm(transformed_real, p=self.exponent, dim=-1).mean()
+        lamb = transformed_real.norm(p=self.exponent, dim=-1).mean().to(self.device)
 
-        dual_transformed_real = self.sobolev_filter(real, dual=True).view([real.shape[0], -1])
+        dual_transformed_real = self.sobolev_filter(real, dual=True).view(real.shape[0], -1)
         # gamma = self.lp_norm(dual_transformed_real, p=self.dual_exponent).mean()
-        gamma = torch.norm(dual_transformed_real, p=self.dual_exponent, dim=-1).mean()
-        lamb, gamma = (lamb.cuda(0), gamma.cuda(0)) if self.USE_CUDA else (lamb, gamma)
+        gamma = dual_transformed_real.norm(p=self.dual_exponent, dim=-1).mean().to(self.device)
         return lamb, gamma
 
     def __call__(self, C, G, data_dict, current_step, level=None, level_in=None):
@@ -79,43 +78,41 @@ class BWGANLoss(Loss):
         loss_C += score_C
 
         GP = 0
-        alpha = torch.FloatTensor(torch.rand((input_real.shape[0], 1, 1, 1))).expand(input_real.shape)
-        alpha = alpha.cuda(0) if self.USE_CUDA else alpha
+        alpha = torch.FloatTensor(torch.rand((input_real.shape[0], 1, 1, 1))).expand(input_real.shape).to(self.device)
         interp = (input_real + alpha * (input_fake.detach() - input_real)).requires_grad_(True)
 
         for i in range(self.n_C):
             interp_score = getattr(C, 'Scale_{}'.format(i))(interp)[-1]
-            weight_grid = torch.ones_like(interp_score).cuda(0) if self.USE_CUDA else torch.ones_like(interp_score)
+            weight_grid = torch.ones_like(interp_score).to(self.device)
             gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=weight_grid,
                             create_graph=True, retain_graph=True, only_inputs=True)[0]
             # GP += ((self.lp_norm(self.sobolev_filter(gradient, dual=True), self.dual_exponent) / gamma - 1) ** 2).mean()
-            GP += ((torch.norm(self.sobolev_filter(gradient, dual=True), p=self.dual_exponent, dim=-1) / gamma - 1) ** 2).mean()
+            dual_sobolev_gradient = self.sobolev_filter(gradient, dual=True).view(gradient.shape[0], -1)
+            GP += lamb * ((torch.norm(dual_sobolev_gradient, p=self.dual_exponent) / gamma - 1) ** 2).mean()
             interp = nn.AvgPool2d(kernel_size=3, padding=1, stride=2, count_include_pad=False)(interp)
-        loss_C += lamb * GP
+        loss_C += GP
 
         if current_step % self.n_critics == 0:
             input_fake = torch.cat([input, fake], dim=1) if self.condition else fake
-
             fake_features = C(input_fake)
 
             G_score = 0
             for i in range(self.n_C):
-                G_score += fake_features[i][-1].mean()
-            loss_G += G_score / gamma
+                G_score += fake_features[i][-1].mean() / gamma
+            loss_G += G_score
 
             if self.FM:
                 FM = 0
-                n_layers = len(fake_features[0])
-                for j in range(n_layers):
-                    FM += self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
-                loss_G += FM * self.FM_lambda / self.n_C
+                for j in range(len(fake_features[0])):
+                    FM += self.FM_lambda * self.FM_criterion(fake_features[i][j], real_features[i][j].detach())
+                loss_G += FM / self.n_C
                 package.update({'FM': FM.detach().item() / self.n_C})
             else:
                 package.update({'FM': 0.0})
 
             if self.VGG:
-                VGG = self.calc_FM(self.VGGNet(fake), self.VGGNet(target), weights=self.VGG_weights)
-                loss_G += self.VGG_lambda * VGG
+                VGG = self.VGG_lambda * self.calc_FM(self.VGGNet(fake), self.VGGNet(target), weights=self.VGG_weights)
+                loss_G += VGG
                 package.update({'VGG': VGG.detach().item()})
             else:
                 package.update({'VGG': 0.0})

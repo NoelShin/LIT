@@ -72,18 +72,18 @@ if __name__ == '__main__':
                     level_in += 1 / nb_transition
                     level_in = np.clip(level_in, level, level + 1.0)
 
-                    if USE_CUDA:
-                        for k, v in data_dict.items():
-                            data_dict.update({k: v.to(device)})
+                    for k, v in data_dict.items():
+                        data_dict.update({k: v.to(device)})
 
                     package.update(criterion(A, G, data_dict, level=level, level_in=level_in))
                     A_optim.zero_grad()
                     package['A_loss'].backward()
                     A_optim.step()
 
-                    G_optim.zero_grad()
-                    package['G_loss'].backward()
-                    G_optim.step()
+                    if current_step % n_critics == 0:
+                        G_optim.zero_grad()
+                        package['G_loss'].backward()
+                        G_optim.step()
 
                     package.update({'Level': level, 'Current_step': current_step})
 
@@ -107,9 +107,8 @@ if __name__ == '__main__':
 
                 current_step += 1
                 package.update({'Current_step': current_step})
-                if USE_CUDA:
-                    for k, v in data_dict.items():
-                        data_dict.update({k: v.to(device)})
+                for k, v in data_dict.items():
+                    data_dict.update({k: v.to(device)})
 
                 package.update(criterion(A, G, data_dict, current_step))
                 A_optim.zero_grad()

@@ -7,6 +7,7 @@ import numpy as np
 class Loss(object):
     def __init__(self, opt):
         self.condition = opt.C_condition
+        self.device = torch.device('cuda' if opt.USE_CUDA else 'cpu', 0)
         self.n_C = opt.n_C
         self.n_critics = opt.n_critics
         self.progression = opt.progression
@@ -48,7 +49,7 @@ class Loss(object):
         if opt.VGG:
             from models import VGG19
             self.VGG = True
-            self.VGGNet = VGG19().cuda(0) if opt.gpu_ids != -1 else VGG19()
+            self.VGGNet = VGG19().to(self.device)
             self.VGG_lambda = opt.VGG_lambda
             self.VGG_weights = [1.0 / 32, 1.0 / 16, 1.0 / 8, 1.0 / 4, 1.0]
 
@@ -60,7 +61,7 @@ class Loss(object):
         for i in range(self.n_C):
             CT += ((real_features_1[i][-1] - real_features_2[i][-1]) ** 2).mean()
             CT += 0.1 * ((real_features_1[i][-2] - real_features_2[i][-2]) ** 2).mean()
-            CT = torch.max(torch.tensor(0.0).cuda(0) if self.USE_CUDA else torch.tensor(0.0), CT - self.CT_factor)
+            CT = torch.max(torch.tensor(0.0).to(self.device), CT - self.CT_factor)
         return CT
 
     def calc_FM(self, fake_features, real_features, weights=None):
@@ -72,15 +73,13 @@ class Loss(object):
 
     def calc_GP(self, C, output, target):
         GP = 0
-        alpha = torch.FloatTensor(torch.rand((target.shape[0], 1, 1, 1))).expand(target.shape)
-        alpha = alpha.cuda(0) if self.USE_CUDA else alpha
+        alpha = torch.FloatTensor(torch.rand((target.shape[0], 1, 1, 1))).expand(target.shape).to(self.device)
 
         interp = (target + alpha * (output - target)).requires_grad_(True)
 
         for i in range(self.n_C):
-            interp_score = getattr(C, 'Scale_{}'.format(i))(interp)[-1].mean()
-            weight_grid = torch.ones_like(interp_score)
-            weight_grid = weight_grid.cuda(0) if self.USE_CUDA else weight_grid
+            interp_score = getattr(C, 'Scale_{}'.format(i))(interp)[-1]
+            weight_grid = torch.ones_like(interp_score).to(self.device)
             gradient = grad(outputs=interp_score, inputs=interp, grad_outputs=weight_grid,
                             create_graph=True, retain_graph=True, only_inputs=True)[0]
             gradient = gradient.view(gradient.shape[0], -1)
